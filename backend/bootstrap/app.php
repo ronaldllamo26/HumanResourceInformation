@@ -68,7 +68,7 @@ return Application::configure(basePath: dirname(__DIR__))
          * because the origin is only reachable through the proxy, which
          * overwrites the header rather than passing a client's own through.
          */
-        $proxies = env('TRUSTED_PROXIES');
+        $proxies = env('TRUSTED_PROXIES', app()->isProduction() ? '*' : null);
 
         if (! empty($proxies)) {
             $middleware->trustProxies(

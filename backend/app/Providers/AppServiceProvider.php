@@ -26,6 +26,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (request()->header('X-Forwarded-Proto') === 'https' || request()->isSecure() || app()->environment('production')) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
+        if (request()->header('Host')) {
+            $scheme = request()->header('X-Forwarded-Proto') ?? (request()->isSecure() ? 'https' : 'http');
+            config(['app.url' => $scheme . '://' . request()->header('Host')]);
+        }
+
         Vite::prefetch(concurrency: 3);
 
         $this->definePasswordPolicy();
