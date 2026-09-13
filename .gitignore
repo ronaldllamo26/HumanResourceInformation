@@ -35,7 +35,6 @@
 /backend/storage/pail
 /backend/vendor
 /frontend/node_modules
-/frontend/dist
 Homestead.json
 Homestead.yaml
 Thumbs.db

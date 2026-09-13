@@ -1,19 +1,3 @@
-# ==========================================
-# Stage 1: Build Frontend Assets (Vite / React)
-# ==========================================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/frontend
-
-COPY frontend/package*.json ./
-RUN npm ci
-
-COPY frontend/ ./
-RUN npm run build
-
-# ==========================================
-# Stage 2: PHP 8.3 Laravel Backend
-# ==========================================
 FROM php:8.4-cli-alpine
 
 # Install system dependencies & PHP extensions
@@ -25,15 +9,15 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy backend dependencies
-COPY backend/composer*.json ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+# Copy backend dependencies including composer.lock
+COPY backend/composer.json backend/composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
 
 # Copy backend source code
 COPY backend/ ./
 
-# Copy compiled frontend assets from Stage 1 into Laravel public directory
-COPY --from=frontend-builder /app/frontend/dist/ ./public/
+# Copy pre-compiled frontend assets directly into Laravel public directory
+COPY frontend/dist/ ./public/
 
 # Optimize autoloader
 RUN composer dump-autoload --optimize --no-dev --ignore-platform-reqs
