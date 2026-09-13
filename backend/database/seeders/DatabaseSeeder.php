@@ -70,20 +70,19 @@ class DatabaseSeeder extends Seeder
      */
     private function seededPassword(string $email): string
     {
-        if (app()->environment('local', 'testing')) {
+        if (app()->environment('local', 'testing') || env('SEED_DEFAULT_PASSWORD', true)) {
             return 'password';
         }
 
         return $this->issued[$email] ??= User::generatePassword();
     }
 
-    /**
-     * Whether a seeded login has to replace its password before it can do
-     * anything. False on a development machine, where forcing the change
-     * would defeat the point of having fixed seed accounts at all.
-     */
     private function passwordIsProvisional(): bool
     {
+        if (env('SEED_DEFAULT_PASSWORD', true)) {
+            return false;
+        }
+
         return ! app()->environment('local', 'testing');
     }
 
