@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The HRIS light palette, verbatim from `resources/css/app.css`.
+ *
+ * Light only, and that is a decision rather than an omission: the system
+ * itself carries a full dark theme because people sit in it for eight hours,
+ * and a landing page is read once. Committing to one look means every colour
+ * here can be checked against the brand instead of against two grounds.
+ */
+:root {
+    --background: 210 62.5% 96.9%;
+    --foreground: 212 64.3% 11%;
+    --card: 206 60% 99.2%;
+    --primary: 203 100% 40%;
+    --primary-foreground: 45 28.6% 97.3%;
+    --muted: 204 58.8% 93.3%;
+    --muted-foreground: 208 33.6% 42.5%;
+    --border: 206 30% 72%;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    @apply bg-background text-foreground antialiased;
+}

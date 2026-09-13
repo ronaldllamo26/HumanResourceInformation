@@ -1,0 +1,8 @@
+node_modules
+package-lock.json
+
+# Blade lives in the backend now and Prettier has no formatter for it anyway;
+# the pattern is kept because `prettier .` run by hand from this folder would
+# otherwise reach across into ../backend and reformat templates nobody asked
+# it to touch.
+*.blade.php

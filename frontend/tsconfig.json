@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "jsx": "react-jsx",
+
+        // Vite strips types and never checks them, so nothing here reaches the
+        // browser. Typechecking is a separate command (`npm run typecheck`) —
+        // which is what lets .jsx and .tsx live side by side while the codebase
+        // converts a file at a time.
+        "noEmit": true,
+        "allowJs": true,
+        "checkJs": false,
+
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "isolatedModules": true,
+        "resolveJsonModule": true,
+
+        // Mirrors the `@` alias in vite.config.js. Both have to agree or the
+        // editor resolves imports the bundler cannot, or the other way round.
+        //
+        // Paths are relative to this file: TypeScript 7 removed `baseUrl`, so
+        // a bare "resources/js/*" is rejected as a non-relative path.
+        "paths": {
+            "@/*": ["./resources/js/*"]
+        }
+    },
+    "include": ["resources/js/**/*.ts", "resources/js/**/*.tsx", "resources/js/types"],
+    "exclude": ["node_modules", "public", "vendor"]
+}

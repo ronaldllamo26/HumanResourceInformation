@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.production.example
+vendor
+tests
+storage/*.key
+.phpunit.result.cache
+*.log
