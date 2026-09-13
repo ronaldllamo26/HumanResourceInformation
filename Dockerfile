@@ -1,8 +1,8 @@
 FROM php:8.4-cli-alpine
 
-# Install system dependencies & PHP extensions
-RUN apk add --no-cache git curl postgresql-dev \
-    && docker-php-ext-install pdo_pgsql pgsql
+# Install pre-compiled PHP extensions instantly via installer (0 compilation time)
+ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
+RUN chmod +x /usr/local/bin/install-php-extensions && install-php-extensions pdo_pgsql pgsql
 
 # Get Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -13,10 +13,8 @@ WORKDIR /var/www/html
 COPY backend/composer.json backend/composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
 
-# Copy backend source code
+# Copy backend source code & pre-compiled frontend assets
 COPY backend/ ./
-
-# Copy pre-compiled frontend assets directly into Laravel public directory
 COPY frontend/dist/ ./public/
 
 # Optimize autoloader
