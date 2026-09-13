@@ -9,7 +9,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
 
 COPY backend/composer*.json ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
 
 COPY backend/ ./
 
