@@ -14,5 +14,4 @@ storage/*.key
 .phpunit.result.cache
 *.log
 *.md
-frontend/dist
 backend/storage/cookies.txt
