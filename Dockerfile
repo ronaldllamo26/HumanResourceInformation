@@ -1,9 +1,8 @@
 FROM php:8.3-cli-alpine
 
-RUN apk add --no-cache git curl libpng-dev libjpeg-turbo-dev freetype-dev libxml2-dev libzip-dev oniguruma-dev icu-dev postgresql-dev
+RUN apk add --no-cache git curl postgresql-dev
 
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) pdo pdo_pgsql pgsql mbstring exif pcntl bcmath gd intl zip opcache
+RUN docker-php-ext-install pdo_pgsql pgsql
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -22,4 +21,3 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 EXPOSE 8000
 
 CMD ["sh", "-c", "php artisan config:cache && php artisan route:cache && php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
-
