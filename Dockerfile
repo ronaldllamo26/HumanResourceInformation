@@ -16,33 +16,9 @@ RUN npm run build
 # ==========================================
 FROM php:8.4-cli-alpine
 
-# Install system dependencies
-RUN apk add --no-cache \
-    git \
-    curl \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    libxml2-dev \
-    libzip-dev \
-    oniguruma-dev \
-    icu-dev \
-    postgresql-dev
-
-# Install PHP extensions
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
-        pdo \
-        pdo_pgsql \
-        pgsql \
-        mbstring \
-        exif \
-        pcntl \
-        bcmath \
-        gd \
-        intl \
-        zip \
-        opcache
+# Install system dependencies & PHP extensions
+RUN apk add --no-cache git curl postgresql-dev \
+    && docker-php-ext-install pdo_pgsql pgsql
 
 # Get Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
