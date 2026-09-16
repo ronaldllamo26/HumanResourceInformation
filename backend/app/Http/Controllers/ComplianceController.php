@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Employee;
 use App\Models\PayrollRun;
 use App\Models\Payslip;
 use App\Services\ComplianceReportBuilder;
@@ -44,7 +45,12 @@ class ComplianceController extends Controller
             'report' => $report,
             'reportLabel' => $this->builder->label($report),
             'columns' => $this->builder->columns($report),
-            'rows' => $built['rows'],
+            // Masked on screen; the CSV export below keeps the full numbers,
+            // because the agency portals need them to accept the filing.
+            'rows' => array_map(
+                fn (array $row) => $row['has_id'] ? [...$row, 'identifier' => Employee::mask($row['identifier'])] : $row,
+                $built['rows'],
+            ),
             'totals' => $built['totals'],
             'missingIds' => $built['missing_ids'],
             'reports' => $this->reportOptions(),

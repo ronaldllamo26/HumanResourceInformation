@@ -4,7 +4,7 @@ import axios from 'axios';
 import { CheckCircle2, Loader2, Save, ScanLine, TriangleAlert, UserCheck } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import EmployeeForm from '@/Pages/HR/Employees/Partials/EmployeeForm';
-import { Button, Card, CardBody } from '@/Components/ui';
+import { Button, Card, CardBody, Field, Textarea } from '@/Components/ui';
 
 const BLANK_EMPLOYEE = {
     first_name: '',
@@ -89,6 +89,8 @@ export default function Create({ options, can = {}, endorsement, prefill = {} })
         ...BLANK_EMPLOYEE,
         ...prefill,
         endorsement_id: endorsement?.id ?? null,
+        // Only asked when there is no endorsement to carry the decision.
+        direct_hire_reason: '',
     });
 
     const picker = useRef(null);
@@ -198,6 +200,42 @@ export default function Create({ options, can = {}, endorsement, prefill = {} })
                         >
                             Back to review
                         </Button>
+                    </CardBody>
+                </Card>
+            )}
+
+            {/* A direct add has no Core 1 endorsement behind it, so the reason
+                stands in for one — required, and kept in the audit log. */}
+            {!endorsement && (
+                <Card className="mb-5 border-warning/30">
+                    <CardBody className="space-y-3">
+                        <div>
+                            <p className="text-sm font-medium text-foreground">
+                                Adding an employee directly
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                New hires normally arrive from Core 1 under New Hires. Say why
+                                this one is added here — a rehire, a transfer, an urgent
+                                replacement. The reason is saved in the audit log.
+                            </p>
+                        </div>
+                        <Field
+                            label="Reason for adding directly"
+                            required
+                            error={errors.direct_hire_reason}
+                        >
+                            {({ id }) => (
+                                <Textarea
+                                    id={id}
+                                    rows={2}
+                                    value={data.direct_hire_reason}
+                                    onChange={(event) =>
+                                        setData('direct_hire_reason', event.target.value)
+                                    }
+                                    error={errors.direct_hire_reason}
+                                />
+                            )}
+                        </Field>
                     </CardBody>
                 </Card>
             )}

@@ -1,19 +1,16 @@
 import { router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { CheckCircle2, Clock3, Hourglass, Plus, Timer, XCircle } from 'lucide-react';
+import { CircleCheck, Clock, Hourglass, Plus, Timer, XCircle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
-    Badge,
     Button,
     Card,
     DateInput,
     Field,
     Input,
-    InputError,
     Modal,
     Pagination,
     Select,
-    MeterCard,
     StatCard,
     Table,
     TableEmpty,
@@ -24,171 +21,114 @@ import {
     THead,
     TR,
 } from '@/Components/ui';
-import { formatDate, initials, withFilters } from '@/lib/utils';
+import { formatDate, withFilters } from '@/lib/utils';
+import DecisionModal from './Partials/DecisionModal';
+import { minutes, StateBadge, TIMEKEEPING_CRUMBS } from './Partials/shared';
 
-const titleCase = (value) =>
-    String(value ?? '')
-        .replace(/[_-]/g, ' ')
-        .replace(/\b\w/g, (character) => character.toUpperCase());
+const STATUSES = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'approved', label: 'Approved' },
+    { value: 'rejected', label: 'Rejected' },
+    { value: 'cancelled', label: 'Cancelled' },
+];
 
-export default function Overtime({
-    requests,
-    summary,
-    filters,
-    statuses,
-    employees,
-    can,
-    ownEmployeeId,
-}) {
-    const [fileOpen, setFileOpen] = useState(false);
-    const [decision, setDecision] = useState(null); // { request, status }
+export default function Overtime({ requests, filters, summary, can }) {
+    const [filing, setFiling] = useState(false);
+    const [deciding, setDeciding] = useState(null);
+    const form = useForm({ work_date: '', hours: '', reason: '' });
 
-    /*
-     * Always the signed-in user's own record. The form used to offer HR a
-     * picker for whose overtime to file; it does not, because HR also decides
-     * on these — see OvertimeRequestPolicy::create. The id still rides in the
-     * payload and is still checked server-side, since the missing picker is
-     * not the rule.
-     */
-    const form = useForm({
-        employee_id: ownEmployeeId ?? '',
-        date: '',
-        start_time: '',
-        end_time: '',
-        reason: '',
-    });
-
-    const decisionForm = useForm({ status: '', remarks: '' });
-
-    const applyFilter = (key, value) => {
-        router.get(
-            '/hr/timekeeping/overtime',
-            { ...filters, [key]: value || undefined },
-            { preserveState: true, preserveScroll: true, replace: true },
-        );
+    const openFile = () => {
+        form.clearErrors();
+        form.setData({
+            work_date: new Date().toISOString().slice(0, 10),
+            hours: '',
+            reason: '',
+        });
+        setFiling(true);
     };
 
     const submit = (event) => {
         event.preventDefault();
-
         form.post('/hr/timekeeping/overtime', {
             preserveScroll: true,
-            onSuccess: () => {
-                // reset() restores the initial data, which already holds the
-                // filer's own id — nothing further to put back.
-                form.reset();
-                setFileOpen(false);
-            },
+            onSuccess: () => setFiling(false),
         });
     };
 
-    const submitDecision = (event) => {
-        event.preventDefault();
-
-        // Set, then posted. `useForm`'s transform() returns undefined, so
-        // chaining throws on the post and approving an overtime request
-        // silently does nothing.
-        decisionForm.transform((data) => ({ ...data, status: decision.status }));
-
-        decisionForm.post(`/hr/timekeeping/overtime/${decision.request.id}/decide`, {
-            preserveScroll: true,
-            onSuccess: () => {
-                decisionForm.reset();
-                setDecision(null);
-            },
-        });
+    const cancel = (request) => {
+        if (window.confirm('Cancel this overtime request?')) {
+            router.post(
+                `/hr/timekeeping/overtime/${request.id}/cancel`,
+                {},
+                { preserveScroll: true },
+            );
+        }
     };
 
     const rows = requests.data ?? [];
-    const meta = requests.meta ?? {};
-
-    // Clicking a figure opens the rows it counted, keeping the employee filter.
-    const drillTo = (changes) =>
-        withFilters('/hr/timekeeping/overtime', filters, changes, ['status']);
-
-    const approvalRate = summary.total > 0 ? (summary.approved / summary.total) * 100 : 0;
 
     return (
         <AppLayout
-            title="Timekeeping & Attendance"
-            breadcrumbs={[
-                { label: 'Human Resource' },
-                { label: 'Timekeeping', href: '/hr/timekeeping' },
-                { label: 'Overtime' },
-            ]}
+            title="Overtime Requests"
+            breadcrumbs={[...TIMEKEEPING_CRUMBS, { label: 'Overtime Requests' }]}
         >
-            <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-5 grid gap-4 sm:grid-cols-3">
                 <StatCard
-                    label="Total Requests"
-                    value={summary.total}
-                    icon={Clock3}
-                    tone="primary"
-                    hint="filed so far"
-                    href={drillTo({})}
-                />
-
-                {/* The queue. Attendance records overtime raw; nothing here is
-                    paid until one of these is decided, so a number sitting in
-                    this tile is money nobody has ruled on. */}
-                <StatCard
-                    label="Pending"
+                    label="Waiting for a decision"
                     value={summary.pending}
                     icon={Hourglass}
                     tone={summary.pending > 0 ? 'warning' : 'muted'}
-                    hint={summary.pending > 0 ? 'unpaid until decided' : 'nothing waiting'}
-                    href={drillTo({ status: 'pending' })}
+                    hint="pays nothing until approved"
+                    href={withFilters('/hr/timekeeping/overtime', filters, {
+                        status: 'pending',
+                    })}
                 />
-
-                <MeterCard
-                    label="Approved"
-                    value={summary.approved}
-                    percent={approvalRate}
-                    badge={`${Math.round(approvalRate)}%`}
-                    icon={CheckCircle2}
-                    tone="success"
-                    iconTone="success"
-                    hint={`of ${summary.total} filed`}
-                    href={drillTo({ status: 'approved' })}
-                />
-
                 <StatCard
-                    label="Approved Hours"
+                    label="Approved hours"
                     value={summary.approved_hours}
-                    icon={Timer}
-                    tone={summary.approved_hours > 0 ? 'info' : 'muted'}
-                    hint="what payroll will pay"
-                    href={drillTo({ status: 'approved' })}
+                    icon={CircleCheck}
+                    tone={summary.approved_hours > 0 ? 'success' : 'muted'}
+                    hint="paid at 125% of the hourly rate"
+                    href={withFilters('/hr/timekeeping/overtime', filters, {
+                        status: 'approved',
+                    })}
+                />
+                <StatCard
+                    label="Rejected"
+                    value={summary.rejected}
+                    icon={XCircle}
+                    tone="muted"
+                    href={withFilters('/hr/timekeeping/overtime', filters, {
+                        status: 'rejected',
+                    })}
                 />
             </div>
 
             <Card>
-                <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row">
+                <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center">
                     <Select
                         value={filters.status ?? ''}
-                        onChange={(event) => applyFilter('status', event.target.value)}
+                        onChange={(event) =>
+                            router.get(
+                                withFilters(
+                                    '/hr/timekeeping/overtime',
+                                    {},
+                                    { status: event.target.value },
+                                ),
+                                {},
+                                {
+                                    preserveState: true,
+                                    replace: true,
+                                },
+                            )
+                        }
                         placeholder="All statuses"
+                        aria-label="Status"
                         className="w-full sm:w-48"
-                        aria-label="Filter by status"
-                        options={statuses.map((status) => ({
-                            value: status,
-                            label: titleCase(status),
-                        }))}
+                        options={STATUSES}
                     />
-
-                    <Select
-                        value={filters.employee_id ?? ''}
-                        onChange={(event) => applyFilter('employee_id', event.target.value)}
-                        placeholder="All employees"
-                        className="w-full sm:w-56"
-                        aria-label="Filter by employee"
-                        options={employees.map((employee) => ({
-                            value: employee.id,
-                            label: employee.full_name,
-                        }))}
-                    />
-
                     {can.create && (
-                        <Button className="sm:ml-auto" onClick={() => setFileOpen(true)}>
+                        <Button onClick={openFile} className="sm:ml-auto">
                             <Plus className="h-4 w-4" />
                             File Overtime
                         </Button>
@@ -198,126 +138,74 @@ export default function Overtime({
                 <Table>
                     <THead>
                         <TR>
-                            <TH>Employee</TH>
                             <TH>Date</TH>
-                            <TH>Window</TH>
-                            <TH className="text-right">Hours</TH>
+                            <TH>Employee</TH>
+                            <TH className="text-right">Hours asked</TH>
+                            <TH className="text-right">DTR past shift</TH>
                             <TH>Reason</TH>
                             <TH>Status</TH>
                             <TH className="text-right">Actions</TH>
                         </TR>
                     </THead>
-
                     <TBody>
                         {rows.length === 0 ? (
                             <TableEmpty
                                 colSpan={7}
-                                icon={Clock3}
+                                icon={Timer}
                                 title="No overtime requests"
-                                description="Filed overtime appears here for supervisor and HR approval."
+                                description="Hours past the shift are paid only once a request for them is approved."
                             />
                         ) : (
                             rows.map((request) => (
                                 <TR key={request.id}>
+                                    <TD className="whitespace-nowrap text-sm font-medium text-foreground">
+                                        {formatDate(request.work_date)}
+                                    </TD>
                                     <TD>
-                                        <div className="flex items-center gap-2.5">
-                                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
-                                                {initials(request.employee?.full_name)}
-                                            </span>
-                                            <div className="min-w-0">
-                                                <p className="truncate text-sm font-medium text-foreground">
-                                                    {request.employee?.full_name}
-                                                </p>
-                                                <p className="truncate text-xs text-muted-foreground">
-                                                    {request.employee?.employee_number}
-                                                </p>
-                                            </div>
-                                        </div>
+                                        <p className="text-sm text-foreground">
+                                            {request.employee}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {request.employee_number}
+                                        </p>
                                     </TD>
-
-                                    <TD className="whitespace-nowrap text-sm text-muted-foreground">
-                                        {formatDate(request.date)}
-                                    </TD>
-
-                                    <TD className="whitespace-nowrap text-sm tabular-nums text-foreground">
-                                        {request.start_time} – {request.end_time}
-                                    </TD>
-
-                                    <TD className="text-right text-sm tabular-nums text-foreground">
+                                    <TD className="text-right text-sm tabular-nums">
                                         {request.hours.toFixed(2)}
                                     </TD>
-
-                                    <TD className="max-w-xs">
-                                        <p
-                                            className="truncate text-sm text-muted-foreground"
-                                            title={request.reason}
-                                        >
-                                            {request.reason}
-                                        </p>
-                                        {request.remarks && (
-                                            <p className="truncate text-xs text-muted-foreground/70">
-                                                {request.approver}: {request.remarks}
+                                    <TD className="text-right text-sm tabular-nums">
+                                        {request.recorded_overtime_minutes === null
+                                            ? 'No record'
+                                            : minutes(request.recorded_overtime_minutes)}
+                                    </TD>
+                                    <TD className="max-w-64 text-sm text-muted-foreground">
+                                        <p className="truncate">{request.reason}</p>
+                                        {request.decision_remarks && (
+                                            <p className="truncate text-xs">
+                                                {request.decided_by}: {request.decision_remarks}
                                             </p>
                                         )}
                                     </TD>
-
                                     <TD>
-                                        <Badge status={request.status} />
+                                        <StateBadge status={request.status} />
                                     </TD>
-
-                                    <TD>
-                                        <div className="flex items-center justify-end gap-1">
+                                    <TD className="text-right">
+                                        <div className="flex justify-end gap-1">
                                             {request.can.decide && (
-                                                <>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            setDecision({
-                                                                request,
-                                                                status: 'approved',
-                                                            })
-                                                        }
-                                                    >
-                                                        <CheckCircle2 className="h-4 w-4 text-success" />
-                                                        Approve
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            setDecision({
-                                                                request,
-                                                                status: 'rejected',
-                                                            })
-                                                        }
-                                                    >
-                                                        <XCircle className="h-4 w-4 text-destructive" />
-                                                        Reject
-                                                    </Button>
-                                                </>
-                                            )}
-
-                                            {!request.can.decide && request.can.cancel && (
                                                 <Button
                                                     size="sm"
-                                                    variant="ghost"
-                                                    onClick={() =>
-                                                        router.post(
-                                                            `/hr/timekeeping/overtime/${request.id}/cancel`,
-                                                            {},
-                                                            { preserveScroll: true },
-                                                        )
-                                                    }
+                                                    onClick={() => setDeciding(request)}
+                                                >
+                                                    Decide
+                                                </Button>
+                                            )}
+                                            {request.can.cancel && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => cancel(request)}
                                                 >
                                                     Cancel
                                                 </Button>
-                                            )}
-
-                                            {!request.can.decide && !request.can.cancel && (
-                                                <span className="text-xs text-muted-foreground">
-                                                    —
-                                                </span>
                                             )}
                                         </div>
                                     </TD>
@@ -326,136 +214,96 @@ export default function Overtime({
                         )}
                     </TBody>
                 </Table>
-
-                <Pagination links={meta.links ?? []} meta={meta} />
+                <Pagination links={requests.links ?? []} meta={requests} />
             </Card>
 
-            {/* File overtime */}
             <Modal
-                show={fileOpen}
-                onClose={() => setFileOpen(false)}
+                show={filing}
+                onClose={() => setFiling(false)}
                 title="File Overtime"
-                description="Your own overtime. An end time at or before the start is treated as running past midnight."
-                maxWidth="lg"
+                description="For hours you worked (or will work) past your shift. Your supervisor or HR decides."
             >
                 <form onSubmit={submit} className="space-y-4">
-                    {/* The error still has somewhere to land: the id is posted
-                        and checked even though no control sets it. */}
-                    <InputError message={form.errors.employee_id} />
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                        <Field label="Date" required error={form.errors.date}>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Date" required error={form.errors.work_date}>
                             {({ id }) => (
                                 <DateInput
                                     id={id}
-                                    value={form.data.date}
+                                    value={form.data.work_date}
                                     onChange={(event) =>
-                                        form.setData('date', event.target.value)
+                                        form.setData('work_date', event.target.value)
                                     }
-                                    error={form.errors.date}
+                                    required
                                 />
                             )}
                         </Field>
-
-                        <Field label="Start" required error={form.errors.start_time}>
+                        <Field label="Hours" required error={form.errors.hours}>
                             {({ id }) => (
                                 <Input
                                     id={id}
-                                    type="time"
-                                    value={form.data.start_time}
+                                    type="number"
+                                    step="0.5"
+                                    min="0.5"
+                                    max="12"
+                                    value={form.data.hours}
                                     onChange={(event) =>
-                                        form.setData('start_time', event.target.value)
+                                        form.setData('hours', event.target.value)
                                     }
-                                    error={form.errors.start_time}
-                                />
-                            )}
-                        </Field>
-
-                        <Field label="End" required error={form.errors.end_time}>
-                            {({ id }) => (
-                                <Input
-                                    id={id}
-                                    type="time"
-                                    value={form.data.end_time}
-                                    onChange={(event) =>
-                                        form.setData('end_time', event.target.value)
-                                    }
-                                    error={form.errors.end_time}
+                                    required
                                 />
                             )}
                         </Field>
                     </div>
-
                     <Field label="Reason" required error={form.errors.reason}>
                         {({ id }) => (
                             <Textarea
                                 id={id}
+                                rows={3}
                                 value={form.data.reason}
                                 onChange={(event) => form.setData('reason', event.target.value)}
-                                error={form.errors.reason}
-                                placeholder="What work requires the extra hours?"
+                                placeholder="e.g. Delivery to the client ran past 5 PM"
+                                required
                             />
                         )}
                     </Field>
-
                     <div className="flex justify-end gap-2 pt-2">
-                        <Button variant="outline" onClick={() => setFileOpen(false)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setFiling(false)}
+                        >
                             Cancel
                         </Button>
                         <Button type="submit" loading={form.processing}>
-                            Submit Request
+                            <Clock className="h-4 w-4" />
+                            File Request
                         </Button>
                     </div>
                 </form>
             </Modal>
 
-            {/* Approve / reject */}
-            <Modal
-                show={Boolean(decision)}
-                onClose={() => setDecision(null)}
-                title={
-                    decision?.status === 'approved' ? 'Approve overtime?' : 'Reject overtime?'
-                }
-                maxWidth="md"
+            <DecisionModal
+                target={deciding}
+                onClose={() => setDeciding(null)}
+                url={deciding ? `/hr/timekeeping/overtime/${deciding.id}/decide` : ''}
+                title="Decide on overtime"
             >
-                <form onSubmit={submitDecision} className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">
-                            {decision?.request.employee?.full_name}
-                        </span>{' '}
-                        — {decision?.request.hours.toFixed(2)} hours on{' '}
-                        {formatDate(decision?.request.date)}.
-                    </p>
-
-                    <Field label="Remarks" error={decisionForm.errors.remarks}>
-                        {({ id }) => (
-                            <Textarea
-                                id={id}
-                                rows={2}
-                                value={decisionForm.data.remarks}
-                                onChange={(event) =>
-                                    decisionForm.setData('remarks', event.target.value)
-                                }
-                            />
-                        )}
-                    </Field>
-
-                    <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setDecision(null)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            type="submit"
-                            variant={
-                                decision?.status === 'approved' ? 'primary' : 'destructive'
-                            }
-                            loading={decisionForm.processing}
-                        >
-                            {decision?.status === 'approved' ? 'Approve' : 'Reject'}
-                        </Button>
+                {deciding && (
+                    <div className="rounded-md bg-secondary/50 p-3 text-sm">
+                        <p className="font-medium text-foreground">
+                            {deciding.employee} · {formatDate(deciding.work_date)}
+                        </p>
+                        <p className="mt-1 text-muted-foreground">
+                            Asks for {deciding.hours.toFixed(2)} hour(s). The DTR shows{' '}
+                            {deciding.recorded_overtime_minutes === null
+                                ? 'no record for that day'
+                                : `${minutes(deciding.recorded_overtime_minutes)} past the shift`}
+                            .
+                        </p>
+                        <p className="mt-1 text-muted-foreground">{deciding.reason}</p>
                     </div>
-                </form>
-            </Modal>
+                )}
+            </DecisionModal>
         </AppLayout>
     );
 }

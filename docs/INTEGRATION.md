@@ -715,10 +715,9 @@ Separation & Final Pay where a person releases it, not through an API.
 wrong.** A suspension is *stored*, and `PayrollReadinessChecker` raises an
 unpaid one as a **warning** on the payroll run screen before the money is
 computed — "3 employees are on unpaid suspension covering 7 days of this
-cutoff, and their attendance does not account for it" — leaving HR to key the
-days on the DTR or to decide the suspension was lifted. The warning goes silent
-once the DTR already explains those days, so it is never a line that is already
-done.
+cutoff" — leaving HR to record the days as unpaid or to decide the suspension
+was lifted. Once the time records show every suspended day as absent (or a rest
+day, holiday or leave), the warning for that suspension goes quiet.
 
 `payroll_effect` says which of the two you got, in the response, rather than
 leaving you to infer it:
@@ -784,10 +783,7 @@ GET /api/v1/analytics/workforce?from=2026-09-01&to=2026-09-30
     "headcount": { "total": 41, "active": 38, "on_leave": 3, "probationary": 6 },
     "by_category": { "internal": 12, "external": 29 },
     "by_client": { "Metro Fleet Logistics": 14, "Visayas Island Transport": 15 },
-    "attendance": {
-      "records": 1886, "present": 1230, "absent": 41, "late": 327,
-      "total_hours": 10255.26, "overtime_hours": 602.13
-    },
+
     "leave": { "total": 24, "pending": 9, "approved": 6, "approved_days": 18 }
   },
   "meta": { "from": "2026-09-01", "to": "2026-09-30", "scope": "organisation" }
@@ -806,6 +802,11 @@ role permits it — and say why in your integration notes.
 
 ---
 
+> **Time & Attendance has no API endpoints yet.** The module was rebuilt as screens
+> first (daily records, shifts, holidays, overtime, corrections, cutoffs, client
+> timesheets); a biometric device's export is imported as a CSV on the Daily Time
+> Records screen for now.
+
 ## Also available
 
 | Endpoint | For |
@@ -814,9 +815,7 @@ role permits it — and say why in your integration notes.
 | `GET /api/v1/employees/{id}` | one record |
 | `GET /api/v1/employees/statistics` | headcount tiles |
 | `GET /api/v1/employees/{id}/documents` | 201-file index (metadata only) |
-| `GET /api/v1/attendance` | DTR rows |
-| `GET /api/v1/attendance/summary` | aggregated attendance |
-| `POST /api/v1/attendance` | biometric devices post punches here |
+
 
 ---
 

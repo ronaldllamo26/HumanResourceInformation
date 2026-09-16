@@ -12,6 +12,7 @@ use App\Services\LeaveService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -85,6 +86,38 @@ class LeaveBalanceController extends Controller
             'credits_earned' => ['required', 'numeric', 'min:0', 'max:400'],
             'credits_carried_over' => ['required', 'numeric', 'min:0', 'max:400'],
         ]);
+
+        /*
+         * Segregation of duties: HR decides everybody's leave, so HR must not
+         * also be able to top up its own credits — that would be approving
+         * leave against a balance you wrote yourself. Another HR user or an
+         * admin makes the change.
+         */
+        $employee = Employee::findOrFail($validated['employee_id']);
+
+        if ($employee->user_id !== null && $employee->user_id === $request->user()->id) {
+            return back()->with('error', 'You cannot adjust your own leave credits. Ask another HR user or an administrator.');
+        }
+
+        /*
+         * No balance may go below what has already been taken. Setting earned
+         * credits under the days already used would leave a negative balance
+         * — leave that was approved and paid, now owed back with nobody having
+         * decided that.
+         */
+        $existing = LeaveBalance::where([
+            'employee_id' => $validated['employee_id'],
+            'leave_type_id' => $validated['leave_type_id'],
+            'year' => $validated['year'],
+        ])->first();
+
+        $used = (float) ($existing?->credits_used ?? 0);
+
+        if ((float) $validated['credits_earned'] + (float) $validated['credits_carried_over'] < $used) {
+            throw ValidationException::withMessages([
+                'credits_earned' => "{$used} day(s) are already used this year, so earned plus carried-over credits cannot be lower than that.",
+            ]);
+        }
 
         LeaveBalance::updateOrCreate(
             [

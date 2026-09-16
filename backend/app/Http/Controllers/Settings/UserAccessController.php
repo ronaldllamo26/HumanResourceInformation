@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Listeners\RecordAuthenticationEvents;
+use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -21,15 +25,32 @@ use Inertia\Response;
  */
 class UserAccessController extends Controller
 {
+    /** An active account unused for this long is flagged on the list. */
+    private const STALE_AFTER_DAYS = 90;
+
+    /** How often access should be reviewed — quarterly. */
+    private const REVIEW_EVERY_DAYS = 90;
+
     public function index(Request $request): Response
     {
         Gate::authorize('manageUsers', Setting::class);
+
+        $lastSignIns = $this->lastSignIns();
+        $staleBefore = now()->subDays(self::STALE_AFTER_DAYS);
 
         return Inertia::render('Settings/Users', [
             'users' => User::with('employee:id,user_id,employee_number')
                 ->orderBy('name')
                 ->get()
                 ->map(fn (User $user) => [
+                    'last_sign_in_at' => $lastSignIns->get($user->id),
+                    // Switched on but not used in three months: an account
+                    // nobody is watching is the one somebody else can use.
+                    'is_stale' => $user->is_active
+                        && ($lastSignIns->has($user->id)
+                            ? $lastSignIns->get($user->id) < $staleBefore->toIso8601String()
+                            : $user->created_at?->lt($staleBefore)),
+                    'is_privileged' => $user->isHrAdmin(),
                     'id' => $user->id,
                     'name' => $user->name,
                     // What the person signs in with, so the admin can tell them.
@@ -51,6 +72,9 @@ class UserAccessController extends Controller
                 ['value' => User::ROLE_EMPLOYEE, 'label' => 'Employee', 'description' => 'Own record, payslips, and filings only.'],
             ],
 
+            'accessReview' => $this->lastAccessReview(),
+            'staleAfterDays' => self::STALE_AFTER_DAYS,
+
             // Employees who could be given a login but do not have one yet.
             'unlinkedEmployees' => Employee::whereNull('user_id')
                 ->whereNotNull('email')
@@ -62,6 +86,43 @@ class UserAccessController extends Controller
                     'email' => $employee->email,
                 ]),
         ]);
+    }
+
+    /**
+     * Records that somebody went through the account list and confirmed who
+     * should still have access.
+     *
+     * Roles are not self-correcting: a person moves out of HR, a temporary
+     * admin is never demoted, a leaver's account outlives the leaver. A review
+     * is the control that catches what de-provisioning missed, and recording
+     * it — who, when, what they looked at — is what makes it evidence rather
+     * than a habit.
+     */
+    public function review(Request $request): RedirectResponse
+    {
+        Gate::authorize('manageUsers', Setting::class);
+
+        $lastSignIns = $this->lastSignIns();
+        $staleBefore = now()->subDays(self::STALE_AFTER_DAYS)->toIso8601String();
+        $active = User::where('is_active', true)->get();
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => User::class,
+            'auditable_id' => null,
+            'event' => 'access_reviewed',
+            'new_values' => [
+                'active_accounts' => $active->count(),
+                'privileged_accounts' => $active->filter->isHrAdmin()->count(),
+                'stale_accounts' => $active->filter(
+                    fn (User $user) => ($lastSignIns->get($user->id) ?? '') < $staleBefore,
+                )->count(),
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return back()->with('success', 'Access review recorded.');
     }
 
     public function store(Request $request): RedirectResponse
@@ -149,5 +210,33 @@ class UserAccessController extends Controller
         $user->tokens()->delete();
 
         return back()->with('success', "New password for {$user->username}: {$password}");
+    }
+
+    /** @return Collection<int, string> user id => ISO time of their latest sign-in */
+    private function lastSignIns()
+    {
+        return AuditLog::query()
+            ->where('event', RecordAuthenticationEvents::EVENT_LOGIN)
+            ->where('auditable_type', User::class)
+            ->whereNotNull('auditable_id')
+            ->groupBy('auditable_id')
+            ->selectRaw('auditable_id, max(created_at) as last_at')
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->auditable_id => Carbon::parse($row->last_at)->toIso8601String()]);
+    }
+
+    /** @return array{at: string|null, by: string|null, due: bool} */
+    private function lastAccessReview(): array
+    {
+        $last = AuditLog::with('user:id,name')
+            ->where('event', 'access_reviewed')
+            ->latest('id')
+            ->first();
+
+        return [
+            'at' => $last?->created_at?->toIso8601String(),
+            'by' => $last?->user?->name,
+            'due' => $last === null || $last->created_at->lt(now()->subDays(self::REVIEW_EVERY_DAYS)),
+        ];
     }
 }

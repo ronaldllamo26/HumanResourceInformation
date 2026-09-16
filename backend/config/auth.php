@@ -114,4 +114,15 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    | A way into a deployment whose admin password nobody has.
+    |
+    | A container host has no terminal, so a lost admin password could not be
+    | reset at all. Set HRIS_ADMIN_PASSWORD in the host's panel and redeploy:
+    | `hris:set-admin-password` applies it once, flagged to be changed at
+    | first sign-in. Remove the variable afterwards. Read from config rather
+    | than env() so a cached config does not make it silently disappear.
+    */
+    'bootstrap_admin_password' => env('HRIS_ADMIN_PASSWORD'),
+
 ];

@@ -13,6 +13,56 @@ to Vercel, not here.
 
 ---
 
+## Hostforge's Docker build (what this repository uses now)
+
+Hostforge builds the root `Dockerfile` from GitHub on every push to `main`, so
+**most of the steps below happen by themselves** — the image compiles the
+frontend, installs PHP dependencies, and `docker/start.sh` links storage and
+caches config when the container starts. There is no terminal to type into.
+
+Set these in the Hostforge panel's environment variables:
+
+| Variable | Value |
+|---|---|
+| `APP_ENV` / `APP_DEBUG` | `production` / `false` |
+| `APP_KEY` | copied from your local `backend/.env` — never shared |
+| `APP_URL` | the site's `https://` address |
+| `DB_*` | Hostforge's database |
+| `RUN_MIGRATIONS` | `true` — leave it on |
+| `TRUSTED_PROXIES` | `*` |
+| `SESSION_SECURE_COOKIE` | `true` |
+
+**The first deploy creates the accounts, and prints their passwords once, to
+the container log.** With `RUN_MIGRATIONS=true`, `start.sh` migrates and then
+runs `php artisan hris:seed-if-empty`, which seeds only a database with no
+accounts. Open the deployment's logs straight after the first successful
+deploy and copy the block headed *Seeded logins* — `admin@primepower.test` and
+the others, each with a generated password that must be changed at first
+sign-in. A later restart finds the accounts and seeds nothing, so nobody's
+chosen password is reset.
+
+**Nobody knows the admin password (or the log was lost)?** There is no
+terminal and no emailed reset, so set it from the panel instead:
+
+1. Add `HRIS_ADMIN_PASSWORD` with a temporary password of at least 8
+   characters, and redeploy (or restart).
+2. Sign in as `admin@primepower.test` with it. You are asked to choose a new
+   password straight away.
+3. Remove `HRIS_ADMIN_PASSWORD` from the panel.
+
+Each value is applied only once, so leaving it set by mistake does not undo
+the password you chose — but remove it anyway. It also creates the admin login
+if the database has none.
+
+Faker is a production dependency for this reason: the seeder builds its demo
+employees through factories, and `composer install --no-dev` would otherwise
+leave it out and crash the first start.
+
+The numbered steps below are the manual equivalent, for a host that serves
+`backend/public` directly instead of building the image.
+
+---
+
 ## 0. Before you touch the server
 
 **Build the assets and commit them.** The server has no Node, so the compiled

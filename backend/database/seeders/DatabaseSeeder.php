@@ -23,7 +23,6 @@ class DatabaseSeeder extends Seeder
         $this->call([
             DepartmentSeeder::class,
             LeaveTypeSeeder::class,
-            ShiftSeeder::class,
         ]);
 
         $this->seedAdminUsers();
@@ -37,12 +36,14 @@ class DatabaseSeeder extends Seeder
         // existed.
         $this->call(ClientSeeder::class);
 
-        // Both need employees; leave also reads schedules to skip rest days.
-        $this->call(AttendanceSeeder::class);
+        // Both need employees.
         $this->call(LeaveSeeder::class);
         $this->call(CredentialSeeder::class);
 
-        // Reads the attendance and leave the two seeders above just created.
+        // Needs employees and reads approved leave; payroll then pays from it.
+        $this->call(TimekeepingSeeder::class);
+
+        // Reads the leave and attendance the seeders above just created.
         $this->call(PayrollSeeder::class);
         $this->call(PerformanceSeeder::class);
 

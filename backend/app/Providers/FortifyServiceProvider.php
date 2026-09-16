@@ -2,13 +2,14 @@
 
 namespace App\Providers;
 
-use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Listeners\RecordAuthenticationEvents;
 use App\Models\User;
+use Illuminate\Auth\Events\Failed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Laravel\Fortify\Fortify;
 
@@ -16,7 +17,7 @@ use Laravel\Fortify\Fortify;
  * Fortify supplies the authentication backend; this app supplies the screens.
  *
  * Fortify ships routes, validation, and the session handling for logging in
- * and resetting a password, but no views — which suits an Inertia app, because
+ * in, but no views — which suits an Inertia app, because
  * the pages already exist as React components and only need to be pointed at.
  *
  * Three things this system already decided had to survive the switch:
@@ -38,38 +39,40 @@ class FortifyServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
-        Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
 
-        $this->app->singleton(\Laravel\Fortify\Contracts\LoginResponse::class, function () {
-            return new class implements \Laravel\Fortify\Contracts\LoginResponse {
-                public function toResponse($request)
-                {
-                    if ($request->wantsJson()) {
-                        return response()->json([
-                            'two_factor' => false,
-                            'user' => $request->user()?->only(['id', 'name', 'email', 'role']),
-                        ]);
-                    }
-
-                    return redirect()->intended(config('fortify.home', '/dashboard'));
-                }
-            };
-        });
-
-        $this->app->singleton(\Laravel\Fortify\Contracts\LogoutResponse::class, function () {
-            return new class implements \Laravel\Fortify\Contracts\LogoutResponse {
-                public function toResponse($request)
-                {
-                    if ($request->wantsJson()) {
-                        return response()->json(['message' => 'Logged out.']);
-                    }
-
-                    return redirect('/');
-                }
-            };
-        });
-
+        $this->refuseDeactivatedAccounts();
         $this->registerViews();
+    }
+
+    /**
+     * A deactivated account cannot sign in on the web.
+     *
+     * Fortify's default check is only username and password, so switching an
+     * account off in Users & Access, or an employee resigning, used to change
+     * nothing at the login screen. The API login already refused them.
+     *
+     * The "deactivated" message is shown only once the password has matched,
+     * so it tells nobody guessing whether an account exists.
+     */
+    private function refuseDeactivatedAccounts(): void
+    {
+        Fortify::authenticateUsing(function (Request $request) {
+            $user = User::where('username', $request->input(Fortify::username()))->first();
+
+            if (! $user || ! Hash::check((string) $request->input('password'), $user->password)) {
+                return null;
+            }
+
+            if (! $user->is_active) {
+                event(new Failed('web', $user, $request->only(Fortify::username())));
+
+                throw ValidationException::withMessages([
+                    Fortify::username() => 'This account has been deactivated. Contact HR if you think this is a mistake.',
+                ]);
+            }
+
+            return $user;
+        });
     }
 
     /**
@@ -80,18 +83,10 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function registerViews(): void
     {
+        // No reset link: accounts carry no email to send one to. A forgotten
+        // password is reset by an administrator on Settings > Users & Access.
         Fortify::loginView(fn () => Inertia::render('Auth/Login', [
-            'canResetPassword' => true,
             'status' => session('status'),
-        ]));
-
-        Fortify::requestPasswordResetLinkView(fn () => Inertia::render('Auth/ForgotPassword', [
-            'status' => session('status'),
-        ]));
-
-        Fortify::resetPasswordView(fn (Request $request) => Inertia::render('Auth/ResetPassword', [
-            'email' => $request->input('email'),
-            'token' => $request->route('token'),
         ]));
 
         // Password confirmation is not an optional Fortify feature — it is
@@ -101,6 +96,5 @@ class FortifyServiceProvider extends ServiceProvider
         // one unreachable, the hand-written pair is gone and this points
         // Fortify at the page they used to render.
         Fortify::confirmPasswordView(fn () => Inertia::render('Auth/ConfirmPassword'));
-
     }
 }

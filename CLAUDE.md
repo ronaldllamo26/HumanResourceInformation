@@ -1,8 +1,8 @@
 # PrimePower Manpower — HRIS (Core Transaction 2)
 
 Fleet & Transportation HRIS. **All five modules are built**: Employee
-Information, Timekeeping & Attendance, Leave & Absence, Payroll & Compensation,
-and Performance Management.
+Information, Time & Attendance (rebuilt — see its section), Leave & Absence,
+Payroll & Compensation, and Performance Management.
 
 ## PrimePower is a manpower agency, not a single employer
 
@@ -356,7 +356,7 @@ root — the root has no `composer.json` and no `package.json` since the split.
 
 `npm.cmd run check` is still the single gate over both stacks: its `test` and
 `lint:php` steps `cd ../backend` themselves, so it covers formatting,
-typecheck, the import check, Pint, and all 1028 tests from one command.
+typecheck, the import check, Pint, and the whole test suite from one command.
 
 **On this machine, `npm` is blocked by the PowerShell execution policy — use
 `npm.cmd`.** Assets are pre-built, so the site works without `npm run dev`.
@@ -1094,12 +1094,16 @@ and becomes an employee only when somebody here approves it — so the act of
 putting a person on the payroll has a decision, a decider, and a date attached
 to it.
 
-- **`/hr/employees/create` is unreachable without an endorsement**, and that is
-  the point. It was left open at first and the rule was immediately cosmetic:
-  the queue was one way in among two, and the second kept no record of who
-  accepted anybody or why. A bare visit now redirects to the inbox rather than
-  403ing — the person *is* allowed to create employees, they are just in the
-  wrong place to start.
+- **`/hr/employees/create` has a direct door again — and it has to say why.**
+  It was once open with no record, then closed so every hire came through an
+  endorsement; the owner asked for an **Add Employee** button back. A bare visit
+  now opens the form as a *direct add*: `store()` without `endorsement_id`
+  requires `direct_hire_reason` (10–500 characters) and writes a `direct_hire`
+  audit row with the reason beside the created employee. That keeps the thing
+  the endorsement existed to record — someone decided, who, and why — without
+  pretending every hire comes from recruitment (rehires, transfers, urgent
+  replacements do not). An `endorsement_id` that no longer exists still goes
+  back to the inbox and creates nobody.
 - **Bulk import stays open, because it is a different act.** Digitising a
   workforce that already works here is not hiring: there is no endorsement for
   somebody on their sixth year. `/hr/employees/import` and the batch document
@@ -1180,9 +1184,8 @@ to it.
 
 Two ways in on the Employees list, plus the paper form on the create screen —
 the same act at different scale rather than three separate features. They sit
-beside each other for that reason; there is no "Add Employee" among them any
-more, because a *new hire* comes from Core 1 (above) and these are for a
-workforce that already exists.
+beside each other for that reason. **Add Employee** sits with them as the
+direct door for a single new hire (above); **New Hires** stays the usual way in.
 
 - **Bulk import (`/hr/employees/import`)** — `EmployeeImporter`. The columns
   are the columns `DataExportController` writes: export, correct the
@@ -1546,204 +1549,91 @@ document is a config edit.
 - A complete file is not a finding. Listing every compliant employee would
   bury the ones that aren't.
 
-## Timekeeping (Module 2)
+## Time & Attendance (Module 2)
 
-`AttendanceCalculator` is deliberately database-free: Payroll multiplies its
-output by money, so every rule is unit tested in isolation. It derives status,
-hours worked, late, undertime, overtime, and night differential from the punches
-plus the assigned `Shift`.
+**Rebuilt from scratch** after the first version was deleted on the owner's
+request (every old file is recoverable from commit `4a9a355`; a `pg_dump` taken
+before the drop is in `storage/app/backups/`). Seven screens under one
+`Timekeeping` sidebar entry, all under `/hr/timekeeping`, in
+`Http/Controllers/Timekeeping/`: **Daily Time Records**, **Shifts & Rest
+Days**, **Holiday Calendar**, **Overtime Requests**, **Time Corrections**,
+**Cutoff Closing** and **Client Timesheets**. Tables come from
+`2026_09_16_000001_create_time_and_attendance_tables`. Old links
+(`/hr/timekeeping/period`, `/reports`, …) redirect to the records with a reason.
 
-- The grace period **forgives** lateness entirely; past it, lateness counts from
-  the scheduled start (not from the grace cutoff).
-- A shift whose `end_time <= start_time` wraps midnight; the calculator pushes
-  its end — and any time-out earlier than the start — to the next day.
-- Night differential is 22:00–06:00, summed over non-overlapping per-day windows
-  so a multi-night shift can't double count.
-- Overtime is stored raw. Whether it is *paid* depends on an approved
-  `OvertimeRequest` — that gate belongs to Payroll.
-- `TimekeepingService::record()` upserts one row per employee/date.
+- **`AttendanceCalculator` is database-free and unit tested**, because payroll
+  multiplies its output by money. Grace forgives lateness entirely; past it,
+  lateness counts from the shift start. A shift or a time-out at or before the
+  start ends the next day. Night differential is 22:00–06:00 per night, never
+  double counted. The break comes off only after five hours (the Labor Code's
+  meal period), so a four-hour rest-day job is four hours. No time-in is
+  absent / rest day / holiday by the calendar; a time-in with no time-out is
+  `incomplete` and computes nothing.
+- **`WorkCalendar` is the one answer to "was this a working day, for whom"**,
+  shared by the DTR, `LeaveService::workingDays()` and payroll so the three
+  cannot disagree about a Tuesday. It resolves the `employee_shifts` row in
+  force on the date (history, not a column — moving somebody to nights in
+  October leaves September computed against days), and somebody with no
+  schedule rests Saturday and Sunday. Memoised per request.
+- **`TimekeepingService::record()` is the only door into `attendance_logs`** —
+  HR's entry, the biometric CSV import, an approved correction and the seeder
+  all go through it, so every day is computed the same way and refused the same
+  way once its cutoff is closed. Looked up with `whereDate`, never
+  `updateOrCreate` (see Gotchas). An absence an approved leave covers is stored
+  `on_leave`.
+- **Only HR writes a day** (`AttendanceLogPolicy::manage`). Everybody else —
+  HR's own days included — files a **Time Correction**; approving rewrites the
+  day through `record()` in one transaction, and a blank punch on the request
+  keeps the punch already recorded. The approver sees the record as it stands
+  now, read live.
+- **Overtime and corrections: file your own, somebody else decides.** `create`
+  needs an employee record with no HR exemption; `decide` is HR or the
+  requester's own supervisor and never the requester. A rejection needs
+  remarks. Only **approved** overtime hours are paid; the raw minutes past the
+  shift are shown beside the request so the approver can compare.
+- **Cutoff Closing freezes a payroll period's days.** Periods come from
+  Payroll, so the cutoff and the run cannot cover different days.
+  `TimekeepingService::assertOpen()` refuses records, imports, holiday edits,
+  filing and decisions dated inside a closed period. **Closing is refused while
+  anything is undecided** — an incomplete punch, pending overtime or a pending
+  correction — because after closing nothing could decide it. HR closes; only an
+  admin reopens, with a reason stored on the row.
+- **Client Timesheets are the agency's half of the week.** The client is who
+  saw the work done, so each client's deployed staff get a sheet per period:
+  prepared (a **snapshot** of `TimekeepingService::summaries()` into
+  `client_timesheet_lines`), marked sent, then confirmed or disputed with the
+  representative's name and remarks. A confirmed sheet cannot be prepared again
+  — what the client signed is not silently regenerated; a disputed one can,
+  after the records are fixed. Printed from the browser like payslips.
+- **Holidays are read by three modules**: the DTR names the day, leave does not
+  charge for it, payroll pays the premium. Regular sorts before special, so a
+  date carrying both pays the higher. Only fixed-date holidays are seeded (this
+  year and next); movable ones are added when proclaimed.
 
-Eight sidebar entries under one `children` dropdown — **Records** (the cutoff
-summary, below), **Period DTR** (the cutoff sheet, below), **Overtime** (file /
-approve / reject), **DTR Corrections** (below), **Shifts & Schedules**,
-**Holidays**, **Exceptions**, and **History** — plus one screen with no entry
-of its own: an employee's own calendar, reached by clicking their row on
-Records. Only HR writes a time record directly; approvers are HR or the
-employee's own supervisor, never the requester.
+**What payroll takes from it** — `PayrollService::gatherInputs()` reads
+`TimekeepingService::summaryFor()`: days worked, hours, lateness, undertime,
+night differential, **unexcused** absences (not those an approved leave covers —
+a paid leave is inside the salary, an unpaid one is deducted once, as leave)
+and approved overtime hours. `holidayPremium()` pays +100% of the hourly rate
+for hours worked on a regular holiday and +30% on a special day, capped at a
+normal day (past that is overtime, paid only if approved). Work on a rest day
+earns nothing extra unless overtime is filed — a stated limit.
 
-**Records (`/hr/timekeeping`) is one row per employee, not one per day.** It
-was "Daily Records": a paginated list of individual days with dropdowns for
-employee, department, and status. That answered "what happened on this day for
-this person", which is a question you have to already know the answer to before
-you can ask it. What HR opens the screen with is "who came in this month, and
-for how many days", so the table counts per person over a cutoff, and each row
-**opens** to the days behind it.
+**`PayrollReadinessChecker`** now checks the DTR before the money:
+`incomplete_punches` and `disputed_timesheets` are **blockers**;
+`pending_corrections`, `pending_overtime`, `missing_records` (nobody recorded a
+day for someone on the payroll), `unconfirmed_timesheets` and `cutoff_open` are
+warnings. The unpaid-suspension warning goes silent for a suspension once every
+one of its days is on the DTR as absent, on leave, rest day or holiday. None of
+them hard-stops a run.
 
-- **The three dropdowns went with the change.** What replaced them is two date
-  inputs and three presets — **Whole month**, **1–15**, **16–end** — because a
-  cutoff here is a range, and a fourth control naming the same range would be a
-  second answer to what "this cutoff" means.
-- **Reports was folded in and now redirects here.** It rendered the same
-  per-employee figures for the same range with no way to reach the days behind
-  them. `/hr/timekeeping/reports` carries its range across rather than 404ing;
-  the CSV export survived as `/hr/timekeeping/export` with its
-  `DataAccessLogger` row. **That export used to resolve its own range** from a
-  `period` name, so the button on a screen showing 1–15 handed back the whole
-  month with neither side saying so — it reads `from` and `to` now.
-- **Somebody with no attendance at all is still a row, at zero.**
-  `attendanceByEmployee()` paginates *employees* and aggregates their logs,
-  where `employeeSummaries()` groups the logs themselves and cannot show a
-  person who has none. On a screen answering "who came in", the person who did
-  not is the answer.
-- **The tiles no longer link, and that is not a regression.** Days Present and
-  Absences are now the totals of two columns of the table directly beneath
-  them, and every row opens to the days behind it.
-- `TimekeepingService::PRESENT_STATUSES` states what "came in" means once —
-  three statuses, because a day somebody was late for is still a day they were
-  there. Four places count it, and a copy that fell out of step would put two
-  figures for the same fortnight on one screen.
+**The bell** counts overtime and corrections the viewer may decide (HR:
+everyone's; supervisor: direct reports'; never their own), as
+`NotificationFeed::awaitingDecision()`.
 
-**The employee screen (`/hr/timekeeping/employee/{employee}`) is a calendar
-first and a table second.** A fortnight as a list of dates makes the reader
-count the weekends out of it themselves; laid out Monday to Sunday, three
-missed Mondays is the thing you see rather than something you work out.
-
-- **Weeks run Monday to Sunday whatever day the cutoff starts on**, so every
-  row has seven cells. Days outside the cutoff are **greyed, not dropped** — a
-  week missing its first two days stops being a week.
-- **A day inside the cutoff with no record is left blank, never drawn absent.**
-  Nothing recorded is not the same claim as "did not come in".
-- **Each week carries its own total**, which no other screen answers: daily
-  totals are on the row and range totals are on the tiles, and neither says
-  whether somebody worked a 60-hour week. Summed over the days inside the
-  cutoff only, so it matches what the payslip will pay.
-- Gated on `EmployeePolicy::view`, and `daysFor()` reads through
-  `scopedQuery()` as well, so the id in the URL decides nothing on its own.
-
-A shift still referenced by a schedule or a time record is **deactivated**
-instead of deleted, so attendance history keeps its shift.
-
-**Holidays** is small but load-bearing, and it is shared across three modules:
-`LeaveService::workingDays()` skips holidays when costing a request,
-`AttendanceCalculator` marks the day's status from them, and `PayrollCalculator`
-pays the Labor Code premium (regular ×2.0, special non-working ×1.3). A year
-with nothing recorded is therefore not an empty screen — it silently charges
-employees leave credits for days they should not be charged for, so the screen
-warns when the *next* year has no holidays yet. A holiday with attendance
-already recorded against it cannot be deleted, only edited: removing it would
-leave those records classified against a rule that no longer exists. Validating
-the (date, name) key needs `whereDate`, not `Rule::unique` — see the
-date-cast-column gotcha below.
-
-**Period DTR (`/hr/timekeeping/period`) is where a cutoff is encoded.** A
-manpower agency's clients send a fortnight of attendance for everybody they
-were deployed, and encoding that one modal at a time is 600 openings for forty
-people. So the whole cutoff is one grid — employees down, days across — and one
-save.
-
-- **The cutoff comes from `payroll_periods`, not a range of its own**, so the
-  DTR and the run that pays from it cannot cover different days. Where no
-  period exists the calendar half-month stands in and the screen says so:
-  refusing to open would invert the order of the work.
-- **Statuses, not punches** — a real limit, stated as one. Safe for pay because
-  `PayrollCalculator` takes basic pay from the monthly salary and deducts
-  absences separately; `hours_worked` only rides along for display.
-- **A day already carrying punches is locked, never overwritten**, and the
-  count left alone is *stated* on the save.
-- **Only cells that actually changed are written.** `AttendanceLog` is
-  `Auditable`, so writing the grid unconditionally would leave 600 audit rows
-  behind every time somebody pressed Save.
-- **Rest days and holidays are proposed, never applied** — the same bargain
-  `DocumentScanner` makes with a filled form.
-- **`record()` is still the only door into `attendance_logs`.** It took an
-  optional `$context` so a caller filling a cutoff hands over the shift, rest
-  day, and holiday it already loaded; the rule for *which* schedule governs a
-  date moved into `scheduleFor()`, which `resolveShift()` and the sheet both
-  call.
-
-**Leave is cross-checked against attendance, and that fixed a pay bug.**
-`LeaveService::approvedLeaveDates()` is the join between Modules 2 and 3 — one
-query, keyed `employeeId|Y-m-d` — and it is what tells an absence from an AWOL.
-Before it, each module held half the answer.
-
-- **Approved unpaid leave was deducted twice.** The day counted as an absence
-  *and* again as unpaid leave, so a week of authorised leave without pay cost
-  two weeks of salary.
-- **Approved paid leave was deducted at all.** A VL day is already inside the
-  basic salary, so taking it off again docked somebody for leave they were
-  entitled to.
-- Both were invisible from the payslip, which shows the two as separate lines
-  that each looked individually correct.
-
-`PayrollService::unexcusedAbsentDays()` now counts only absences with nothing
-filed behind them, and whether a day is covered is *asked of LeaveService*
-rather than re-derived — so payroll, the exception scanner and the DTR screen
-cannot reach different conclusions about the same Tuesday.
-
-**DTR Corrections (`/hr/timekeeping/adjustments`) is the exception-handling
-step.** HR can already write a time record directly; employees cannot and never
-should be able to, because a DTR somebody can rewrite is not a record of
-anything. They say what the day should have said and why, and a supervisor or
-HR decides before it touches the log.
-
-- **Approving *applies* the correction through `TimekeepingService::record()`**,
-  so the day is recomputed by the same calculator payroll depends on. Both
-  halves in one transaction: an approval whose apply failed would leave a
-  request marked approved and a record that never changed — the worst of the
-  three states, because it looks handled.
-- **A blank punch leaves the existing one alone.** A request to add a missing
-  time-out says nothing about the time-in.
-- **What the day currently says is read live, not snapshotted at filing**, so
-  an approver decides against the record as it stands. A day nobody keyed comes
-  back null — the difference between "correct this" and "create this".
-- Policy mirrors overtime's: everybody files their own, HR has no exemption and
-  needs none, and the approver may never be the requester. One open request per
-  day.
-
-**Overtime is filed by the person who worked it, and by nobody else.**
-`OvertimeRequestPolicy::create` requires an employee record rather than
-exempting `isHrAdmin()`. It used to work the other way, which made HR both the
-claimant and an approver of the same claim — worse than on leave, because
-`PayrollService::approvedOvertimeHours()` reads approved requests straight onto
-a payslip. `update` is the owner's too: a request states what somebody claims
-they worked, and HR that disagrees has `decide()`.
-
-**Imports are recorded durably.** `DataAccessLogger::imported()` writes the
-batch — file, counts, and the rows refused — because the importer's per-row
-report is flashed to the session and gone on the next page load. The rows that
-did not land are exactly the ones somebody comes looking for a month later.
-
-**Exceptions** is the automated DTR checker: `AttendanceExceptionScanner` is a
-database-free, config-driven rule engine (same pattern as
-`AttendanceCalculator`) that flags two kinds of anomaly over the filtered
-range — record-level (a missing time-out, a day's lateness or overtime past a
-threshold) and pattern-level (an employee trending toward chronic lateness or
-absence, even when no single day crosses a threshold). Thresholds live in
-`config/timekeeping.php`, not code, so tightening a rule is a config edit. A
-missing time-out is never flagged for *today* — only for a day already in the
-past, per `stale_open_punch_days`.
-
-It also runs the leave cross-check, which produces two findings pointing in
-opposite directions:
-
-- **`awol`** — absent with nothing filed. Critical: it is a disciplinary matter
-  and an unpaid day, and nobody chasing it on the day will remember it at
-  cutoff.
-- **`unrecorded_leave`** — absent on a day an approved leave *does* cover, so
-  the DTR row is stale because the leave was approved after the day was keyed.
-  A warning rather than an error: payroll already ignores it, so the money is
-  right and only the record reads wrong.
-
-The range comes from the logs themselves rather than a new parameter, so every
-existing caller keeps working.
-
-**History** is the audit trail for DTR edits — who changed a record, when, and
-what changed — reusing the same `viewAuditLog` gate as Settings > Security
-rather than a new permission, so it's HR/admin only. It filters by event type
-(`created`/`updated`/`deleted`) only: `employee_id` lives inside the audit's
-JSON diff, not a real column, so filtering on it after `paginate()` would
-silently corrupt the pagination totals.
-
+Not rebuilt from the old module, on purpose for now: the Exceptions scanner,
+the edit History screen (the audit log still records every change), the
+per-employee calendar, the dashboard attendance tiles and `/api/v1/attendance`.
 ## Leave (Module 3)
 
 **The employee files; HR or an admin decides.** One step, and nobody signs off
@@ -1778,12 +1668,19 @@ on their own leave — HR included.
 - Unpaid types (`is_paid = false`) never touch the ledger.
 - Attachments live on the private disk and download through
   `hr.leave.attachment` after a policy check, same as 201-file documents.
-- **The topbar bell only lights for HR now.** It counts every request awaiting
-  a decision. Supervisors used to be counted for their own reports' pending
-  requests, which was right while endorsing was a step they took; with the
-  decision HR's alone, a badge they cannot act on only teaches them to ignore
-  the bell. Shared lazily from `HandleInertiaRequests`, so guests never run the
-  query.
+- **The topbar bell is a dropdown** (`NotificationBell.jsx`), and its badge
+  counts only what is waiting on *this* person to decide:
+  `NotificationFeed::count()` — pending leave (HR, never their own), overtime
+  and DTR corrections (HR, or a supervisor for direct reports), and Core 1
+  hires (whoever may open the inbox). Shared lazily as `notificationCount`.
+  The list itself is `GET /notifications`, fetched **when the bell opens**
+  rather than on every page, and adds what is informational rather than
+  actionable — expiring documents in the viewer's scope and decisions on their
+  own leave from the last 14 days. Nothing is stored as a notification, so
+  there is no read state to go stale: an entry disappears when the thing it
+  points at is dealt with. Supervisors are not counted for leave, because the
+  decision is HR's alone and a badge they cannot act on teaches them to ignore
+  the bell.
 
 **Credits accrue, they are not handed out.** The screen used to grant every
 active employee a full year's entitlement on 1 January — wrong in the direction
@@ -1969,8 +1866,6 @@ to every signed-in user.
   Employee Information now (see below); `/settings/organization` redirects to
   `/hr/departments` so old links still land.
 - **Security** replaced the starter kit's `/profile`, which now redirects there.
-  `email_verified_at` is guarded, so clearing it on an email change has to
-  happen outside the mass-assignment payload.
 - **Only an admin renames themselves.** `SettingPolicy::renameSelf` gates the
   Name field on Settings > Security; HR staff, supervisors, and employees see
   their name stated rather than editable. `users.name` and the employee record
@@ -1980,14 +1875,12 @@ to every signed-in user.
   it rather than to detect it. An admin keeps the field because an admin need
   not be an employee at all: a pure system account has no 201 file to be held
   to, and locking it would leave a wrong name with nowhere to be fixed.
-  - **Email and password are deliberately outside this.** They are credentials
-    rather than a display name — what you sign in with, and where a reset is
-    sent — and the Security screen exists so every signed-in user manages their
-    own. Changing an address already forces re-verification.
-  - The rule is enforced in `updateProfile`, not just hidden: `name` is dropped
-    from the validation rules for anyone who may not set it, so a posted name
-    is **ignored rather than refused**. Refusing would fail an email change over
-    a field the person cannot see, and nothing wrong is stored either way.
+  - **The password is deliberately outside this.** It is a credential rather
+    than a display name, and the Security screen exists so every signed-in
+    user manages their own.
+  - The rule is enforced in `updateProfile`, not just hidden: a posted name
+    from anyone who may not set it is **ignored rather than refused**, and
+    nothing wrong is stored either way.
 - **Appearance** (theme, sidebar default) is per-device and lives in
   `localStorage`, not the database.
 
@@ -1996,107 +1889,143 @@ to every signed-in user.
 The access rules themselves are Module 1's (`scopedQuery()` + policies, salary
 behind `viewSensitive`). What follows is the layer underneath them.
 
-- **There are two second factors, and the emailed one exists because the other
-  was never switched on.** Fortify's TOTP had been enabled for weeks with
-  **zero accounts enrolled** — which is the whole argument for adding a second
-  channel rather than tuning the first. TOTP asks somebody to install an app,
-  scan a QR code and keep recovery codes safe *before* it protects anything,
-  and a control nobody finishes setting up is a control that is off. An
-  emailed code asks for an inbox they already have open.
-  - **`RequireOtp` holds the session, not the account.** The flag is
-    `otp.verified_at` in the session, so a second machine asks again and
-    signing out forgets it — which is what somebody expects from a factor whose
-    job is to notice a login they did not make.
-  - **The first *held request* sends the code, not the login controller.** One
-    rule then covers every way into a session: the login form, a remembered
-    cookie being honoured, and a session that was authenticated before the
-    factor was switched on. Hooking the login event instead would have let the
-    last two walk straight past a screen that was never shown.
-  - **It sits after `RequirePasswordChange` in the middleware stack, and the
-    order is the argument.** A provisioned password is shared by construction,
-    so the code would otherwise be a second factor guarding a first one that
-    is already known to somebody else. Replacing the password comes first;
-    proving the inbox comes second.
-  - **The code is hashed, never stored.** A live six-digit code in plaintext
-    would make that column a better target than the password hash beside it:
-    a password hash cannot be replayed and a plaintext OTP can. `otp_code_hash`
-    is in `$hidden` for the same reason `two_factor_secret` is.
-  - **`max_attempts` is what makes six digits a factor rather than a
-    formality.** A million combinations is a lot for a person and nothing for
-    a script: with unlimited guesses inside the five-minute window the code is
-    decoration. Five wrong answers **burn the code, and never lock the
-    account** — locking would hand anybody who knows an email address a way to
-    keep its owner out, which is a denial of service dressed as a control.
-  - **A code works once**, cleared on success so it cannot be replayed out of
-    browser history, a second tab, or a proxy log. The session id is
-    regenerated on the way through, because the one before the factor cleared
-    may have been seen by whoever had the password.
-  - **The screen always offers a way to sign out**, and `logout` is on the
-    middleware's allow-list. An inbox nobody can reach — wrong address on the
-    account, mail unconfigured on the server — would otherwise be a permanent
-    lockout rather than an inconvenience. It is the same reasoning that puts
-    logout on `RequirePasswordChange`'s list.
-  - **With `MAIL_MAILER=log` the code goes to `storage/logs/laravel.log` and is
-    never delivered**, so the Settings card *warns before the switch is thrown*
-    rather than refusing. Reading the log is a legitimate way to demonstrate
-    the feature, and refusing would make it undemonstrable on a fresh clone —
-    but somebody who switches it on and signs out without knowing that is
-    locked to the code screen until they use the sign-out link.
-  - Off by default (`OTP_DEFAULT_ENABLED=false`). A default that holds every
-    login behind a code is only safe once mail is known to deliver.
-  - **An SMS channel was built here and taken back out, and the reason is not
-    the code.** It worked: a `SmsSender` with Semaphore and Twilio drivers on
-    one shape, the number read off `employees.mobile_number`, E.164 conversion
-    at the edge, and an email fallback for accounts that could not receive a
-    text. What killed it is that **every SMS gateway reachable from the
-    Philippines is prepaid** — so the channel carries a running cost and a day
-    it stops working, which for the *only* way into a system is the wrong
-    trade. Two facts settled it: this is coursework with no budget, and two of
-    the accounts on this system had no phone number at all, including the
-    administrator's.
-    - Email costs nothing, needs no account, and its address **is** the login,
-      which is what makes it the floor rather than one option among two. If SMS
-      returns it returns *beside* this, never instead of it, and the fallback
-      is what makes that safe.
-    - The reverted work is worth not rediscovering: the number belongs on the
-      employee record and must not be copied onto `users` (it would drift the
-      way `users.name` can, silently), a gateway with no credentials has to go
-      dark rather than fall through, and `send()` has to report failure without
-      discarding the code — a gateway that accepts a message and then times out
-      would otherwise leave somebody holding a code the database had forgotten.
-  - The API stack is outside it, exactly like `RequirePasswordChange`: a
-    Sanctum token is a machine credential on a biometric device with no inbox
-    and nobody at the other end to read one.
-- **Two-factor authentication is on, and `confirmPassword` is the half people
-  forget.** A password was the whole front door of a system holding salary,
-  government identifiers and bank details — and a password is the credential
-  most likely to be reused, phished, or read back off the chat message it was
-  handed over in. Fortify ships the whole feature; it was simply switched off.
-  - **`confirmPassword: true` makes *disabling* re-ask for the password too.**
-    Without it the cheapest way past a second factor is an unlocked machine and
-    one click: the attacker never needs the phone, they remove the requirement.
-    Guarded by a test in both directions.
-  - **Three states, not a toggle.** Fortify writes the secret the moment
-    somebody asks to enable 2FA and only sets `two_factor_confirmed_at` once
-    they have typed a code from their app. Somebody who closed the tab halfway
-    holds a secret and *no protection*, and the login flow correctly does not
-    challenge them — so the Settings card says "not on yet" rather than
-    reporting a factor that was never finished. Telling them otherwise is the
-    reading that ends with a person trusting a door that is open.
-  - **`two_factor_secret` and `two_factor_recovery_codes` are in `$hidden`,
-    and that was a real find.** `TwoFactorAuthenticatable` brings the behaviour
-    but not the hiding — the starter kits add those two entries and this
-    project has no starter kit. Without them the secret serialises like any
-    other column, and Settings > Security puts the signed-in user's account
-    into an Inertia payload, so it would have reached the browser, the page
-    cache and browser history on every visit. Caught by a test rather than by
-    review, which is the only reason it is not still true.
-  - The QR code and the recovery codes are **fetched when the panel is opened**
-    rather than shipped with the page, for the same reason: they are the secret
-    itself, and putting them in every Settings payload would put them in every
-    Settings page cache.
-  - **Losing `APP_KEY` locks every enrolled account out of its second factor** —
-    Fortify encrypts both columns. That key is the first thing to back up.
+- **Sign-in is a username and a password, and there is no second factor.**
+  Both second factors — Fortify's authenticator-app 2FA and the emailed
+  one-time code — were removed on request, along with their routes, pages,
+  middleware (`RequireOtp`), service, config and tests; migration
+  `2026_09_13_000001_replace_second_factors_with_username_login` drops their
+  columns and adds `users.username`. **This is a known gap** on a system that
+  holds salary, government identifiers and bank details, and the first
+  control to restore before real employee data goes in.
+  - **A company login should not hang off a personal inbox**, which is the
+    reason for the username. The role already lives on the account, so
+    `admin@primepower.test` and `hrstaff@primepower.test` say who is signing in
+    and what they may open.
+  - **A login account has no email, and nothing on the web side sends mail.**
+    The forgot-password link, the emailed reset flow (`Features::resetPasswords`,
+    `ResetUserPassword`, the `ForgotPassword`/`ResetPassword` pages) and email
+    verification (its three controllers, routes, page and the `verified`
+    middleware) were removed on request, and migration
+    `2026_09_13_000002_make_login_accounts_email_free` makes `users.email`
+    nullable and drops `email_verified_at` and `password_reset_tokens`. **A
+    forgotten password is reset by an admin on Users & Access**, which shows
+    the new temporary password once. Existing emails were kept rather than
+    wiped, because the API login still accepts one (below) and the data could
+    not be put back.
+  - **The employee's email is contact information, not a login.** The employee
+    form no longer needs one to create an account and no longer copies it onto
+    `users`; the 201 file's email field is untouched.
+  - **A username is shaped like a company address and is not one.** Every
+    username ends in `@primepower.test` (`User::USERNAME_DOMAIN`) — the seeded
+    role logins are `admin@`, `hrstaff@` and `employee@primepower.test` — and
+    nothing is ever mailed to it. Migration
+    `2026_09_13_000003_give_usernames_the_company_domain` gave existing
+    usernames the domain and renamed `hr` to `hrstaff`. Users & Access accepts
+    `nina` or `nina@primepower.test` and stores the second (`User::withDomain()`).
+  - **Every account gets a username however it was created.**
+    `User::usernameFor()` makes one from the name — Juan Dela Cruz becomes
+    `jdelacruz@primepower.test`, numbered if taken — which the employee form and the
+    seeder use; Users & Access takes one typed in, or makes it from the name
+    when left blank. `User::booted()` fills a blank one on `creating` so no
+    path can make a login that cannot sign in. An explicit username is kept.
+  - **Fortify lowercases the typed username** (`lowercase_usernames`), so
+    `Admin` and `admin` are the same login. An email typed into the username
+    box does not sign anybody in: one way in, not two.
+  - **Every place that hands out a login states the username**, because that
+    is now what the person needs to be told — the employee form's flash, Users
+    & Access create and reset, and the API's `username` beside
+    `temporary_password`. Users & Access lists each account's username.
+  - **The audit trail records the typed username** in `new_values.username`
+    for failed sign-ins and lockouts; rows written before the change hold
+    `email`, and the Security screen reads either.
+  - The API's token login (`POST /api/v1/login`) takes a `username`, and still
+    accepts an `email` in its place for accounts that have one — a documented
+    contract other ISMERS systems already call.
+  - **An SPA conversion was attempted and backed out.** A commit briefly
+    replaced Inertia with `react-router-dom`, a custom `@inertiajs/react`
+    shim, CORS and a `frontend/dist` build, while 39 controllers still called
+    `Inertia::render()` — neither architecture working. It was restored to the
+    one-app setup; the attempt is kept on branch `backup/spa-attempt-2026-09-13`.
+- **Employee Information's security controls are listed one by one in
+  `docs/SECURITY.md` §11**, against the nine the owner asked for, with MFA
+  recorded as deliberately deferred. `EmployeeInformationSecurityTest` covers
+  the four added for it:
+  - **A deactivated account kept working, and that was a real hole.** Fortify
+    only checked username and password, nothing checked `is_active` on a web
+    request, and only archiving ever switched a login off — so a resigned
+    employee could still sign in and read 201 files. Now: Fortify
+    `authenticateUsing` refuses the account (the "deactivated" wording only
+    after the password matches, so it tells a guesser nothing);
+    `EnsureAccountIsActive` signs an open session out on its next request;
+    `User::booted()` deletes tokens and database sessions the moment
+    `is_active` goes false; Sanctum's `authenticateAccessTokensUsing` refuses a
+    surviving token; and `Employee::booted()` switches the login off whenever
+    status becomes `inactive` or employment status `resigned`/`terminated`,
+    from any path. It only ever switches *off* — turning a login on is a
+    decision (Users & Access, or archive restore).
+  - **`authenticateUsing` fires `Failed` with no user**, which silently stopped
+    the audit log naming the account on a wrong password.
+    `RecordAuthenticationEvents::recordFailed` now looks the account up from
+    the typed username when the event carries none.
+  - **Maskable numbers reach the web as `••••••` plus the last four**
+    (`Employee::MASKABLE`, `EmployeeResource::masked()`), on the record page
+    and the list payload. The full value crosses only through
+    `POST /hr/employees/{employee}/reveal` — one field, logged as `accessed`
+    with the field named, `no-store`, `throttle:30,1` — and hides again after
+    30 seconds on screen. The gate is the one that drew the masked value:
+    `viewSensitive`, except the licence number, which supervisors already saw
+    and so asks `view`. The **edit form and the API stay unmasked** (both need
+    real values); opening the edit form and reading a record over the API are
+    logged as reads. A person opening their own record is not logged — it
+    would bury the reads that are findings.
+  - **The privacy notice holds every web session until read**
+    (`RequirePrivacyAcknowledgement`), keyed on `config('privacy.notice_version')`
+    so a changed notice is shown again. It steps aside while
+    `must_change_password` is set, or the two holds would redirect into each
+    other. The acknowledgement is stored on the user and as a
+    `privacy_acknowledged` audit row. The scanner's processor is named in the
+    notice only when the scanner is enabled — that disclosure is the RA 10173
+    obligation the scanner section above says is unavoidable. **`UserFactory`
+    defaults to acknowledged**, or every feature test would be redirected;
+    `withoutPrivacyAcknowledgement()` is the state for testing the hold.
+  - **`SESSION_ENCRYPT` defaults to true** in `config/session.php`: session
+    rows carry flash messages, and two of those are temporary passwords.
+  - **`scripts/check-imports.mjs` reads JSX prose too.** "encrypted (AES-256)"
+    in the notice text failed the check as a call to an undefined
+    `encrypted()`; reword prose rather than weakening the checker.
+- **Leave, Payroll, Performance and cross-cutting controls are `docs/SECURITY.md`
+  §12–15**, each marked in place / new / deliberately not done with the reason.
+  `ModuleSecurityTest` covers what was added:
+  - **Nobody adjusts their own leave credits**, the balance-screen twin of
+    nobody deciding their own leave. A balance cannot be set below
+    `credits_used`, and `LeaveService::creditShortfall()` re-checks credits at
+    *approval* — filing already checked, but a balance can shrink in between.
+  - **`markPaid` excludes `processed_by`.** `approve` already did; confirming
+    disbursement did not, so the processor could confirm their own run was
+    paid. Compute, approve, confirm are now three different hands.
+  - **`PayrollAnomalyScanner` checks the computed money** on the run screen
+    (draft and for-approval), beside `PayrollReadinessChecker`, which checks the
+    DTR *before* computing: shared bank accounts (compared in PHP — encrypted),
+    pay after leaving, pay before hire, net ≠ gross − deductions, zero net, and
+    a >50% swing against the last reportable payslip. Warns, never blocks.
+  - **Payslip and Compliance screen payloads are masked**; the compliance CSV
+    and the Finance register API keep full numbers because the recipients need
+    them. Salary figures are **not** column-encrypted on purpose: every payroll
+    report sums them in SQL.
+  - **Peer and subordinate reviewers are anonymous** to everybody but HR and the
+    writer (`PerformanceController::reviewerName()`); `PerformanceReviewRating`
+    is now `Auditable`.
+  - **Audit rows are signed** (`AuditLogSigner`, HMAC-SHA256, key derived from
+    `APP_KEY`), in the model's `created` hook so the id is inside the signature;
+    `audit:verify` and Settings → Security *Verify integrity* re-check them.
+    Canonicalised with sorted JSON keys and whole-second timestamps — verified
+    against the real Postgres data (1,896 rows) not just SQLite. Rotating
+    `APP_KEY` breaks every signature, as it already breaks encrypted columns.
+  - **Users & Access is also the access review**: last sign-in (from `login`
+    audit rows), active accounts unused 90 days, and *Record review* writing an
+    `access_reviewed` row; "Review due" after 90 days.
+  - **A PHPUnit test helper must not be named `run()`** — `TestCase::run()` is
+    final and the whole file fatals before a single test reports.
 - **Government identifiers and the bank account are encrypted at rest.** SSS,
   PhilHealth, Pag-IBIG, TIN, the bank account number, and the licence number
   are `encrypted` casts. `viewSensitive` already decides who may *see* them;
@@ -2175,18 +2104,11 @@ behind `viewSensitive`). What follows is the layer underneath them.
   trapping someone in a session they cannot leave is worse than the risk being
   managed, and signing out reduces exposure rather than adding to it.
   - The flag is cleared by the act that removes the reason for it rather than
-    by a "done" button reachable without changing anything — and by **both**
-    acts that qualify: `SecurityController::updatePassword()` and
-    `ResetUserPassword`. Each also revokes the account's API tokens, since a
-    token issued while the shared password was live was issued to whoever held
-    it, and rotating one while leaving the other is half a rotation.
-  - **The reset path was missed at first, and the miss was a trap with no way
-    out.** Only the Settings form cleared the flag, so somebody who took the
-    other route to the same act — the emailed reset link — chose a password
-    nobody else had ever seen and was *still* held afterwards, on a screen
-    telling them to replace a password they had just replaced. Nothing inside
-    the reset flow could lift it. A reset is the user choosing their own
-    password, which is the entire condition the flag describes.
+    by a "done" button reachable without changing anything:
+    `SecurityController::updatePassword()`. It also revokes the account's API
+    tokens, since a token issued while the shared password was live was issued
+    to whoever held it, and rotating one while leaving the other is half a
+    rotation. There is no emailed reset link to be a second way out any more.
   - **The API stack is deliberately outside this.** A Sanctum token is an
     unattended credential on a biometric device with nobody at the other end to
     type a new password; holding it would take the timeclock down rather than
@@ -2327,6 +2249,38 @@ codebase:
 - **`php artisan storage:link` has to be run on the server.** The symlink is
   gitignored, and five `asset('storage/...')` call sites depend on it — the
   folder split broke it locally exactly this way.
+
+**Hostforge builds the root `Dockerfile`, and `docker/start.sh` runs at
+container start** — storage link, then (with `RUN_MIGRATIONS=true`) migrate and
+`php artisan hris:seed-if-empty`, then config/route/view caching and
+`artisan serve` on port 8000 with `/up` as the health check.
+
+- **A first deploy would otherwise have no accounts at all.** A container host
+  has no terminal to run `db:seed` from, and `start.sh` only migrated — so the
+  database came up empty and nobody could sign in. `hris:seed-if-empty` seeds
+  only when `users` has no rows: re-seeding on every restart would re-issue
+  every seeded password outside `local`, locking people out of the ones they
+  chose. The generated passwords go to the container log once.
+- **`fakerphp/faker` is in `require`, not `require-dev`, and that is not a
+  mistake.** The image installs with `--no-dev`, and `DatabaseSeeder` builds
+  its demo employees through factories that call `fake()` — so with Faker
+  dev-only the first-start seed threw, `set -e` stopped the script, and the
+  container restarted forever. Found by migrating and seeding a scratch
+  database under `APP_ENV=production` before any deploy saw it.
+- **`hris:set-admin-password` is the way back in without a terminal.** With no
+  emailed reset and no shell on the host, a lost admin password had no
+  recovery at all. `HRIS_ADMIN_PASSWORD` in the panel is applied by `start.sh`
+  to `admin@primepower.test` (created if missing), flagged
+  `must_change_password`, tokens revoked. **Applied once per value**: an HMAC
+  of the value under `APP_KEY` is stored in `settings` as
+  `security.admin_password_applied`, so a restart with the variable still set
+  cannot silently undo the password the admin then chose — and the stored
+  fingerprint is not the password. Read through
+  `config('auth.bootstrap_admin_password')`, never `env()`, because a cached
+  config makes `env()` return null.
+- **`start.sh` must stay LF.** `.gitattributes` enforces it, and the Dockerfile
+  strips `\r` anyway: a CRLF script fails under Linux `sh` with an error that
+  names neither the file nor the line ending.
 
 ## Gotchas that have already cost time
 
@@ -2478,12 +2432,14 @@ scan the planner would choose anyway, and nothing filters on the column —
 its primary key. Adding a foreign key means deciding which of those two cases
 it is.
 
-Seed accounts (password `password` **on a local machine only** — see below):
-`admin@primepower.test`, `hr@primepower.test`, and `employee@primepower.test` —
+Seed accounts (password `password` **on a local machine only** — see below)
+sign in by **username**: `admin@primepower.test`, `hrstaff@primepower.test`, and
+`employee@primepower.test` —
 a rank-and-file login with a supervisor above it, so the self-service half (own
 payslip, own leave, own 201 file) and the approval routing can both be
-exercised. The supervisor accounts are the seeded department heads; their emails
-are Faker-generated, so read one out of the `users` table.
+exercised. The supervisor accounts are the seeded department heads, with
+usernames made from their Faker-generated names; read one out of the `users`
+table.
 
 **`password` is local-only, and the seeder enforces that rather than trusting
 it.** The fixed password is the whole point of a seed account on a development
@@ -2501,7 +2457,7 @@ empty on a fresh install — which looks broken rather than pending.
 
 ## Known gaps
 
-All five modules are functional. Still outstanding: separation pay for
+Time & Attendance is removed pending a redesign (see its section). Still outstanding: separation pay for
 authorised causes (deliberately left to HR, see Payroll above); peer and
 subordinate reviews are supported by the schema and scoring but have no
 assignment UI (only self and supervisor are created at rollout); email

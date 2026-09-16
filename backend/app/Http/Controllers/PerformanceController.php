@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\EmployeeKpi;
 use App\Models\PerformanceReview;
 use App\Models\ReviewCycle;
+use App\Models\User;
 use App\Services\PerformanceScorer;
 use App\Services\PerformanceService;
 use Illuminate\Http\RedirectResponse;
@@ -44,7 +45,7 @@ class PerformanceController extends Controller
                     'employee' => $review->employee?->full_name,
                     'employee_number' => $review->employee?->employee_number,
                     'cycle' => $review->reviewCycle?->name,
-                    'reviewer' => $review->reviewer?->name,
+                    'reviewer' => $this->reviewerName($review, $request->user()),
                     'reviewer_type' => $review->reviewer_type,
                     'status' => $review->status,
                     'overall_rating' => $review->overall_rating ? (float) $review->overall_rating : null,
@@ -92,7 +93,7 @@ class PerformanceController extends Controller
                 'id' => $review->id,
                 'status' => $review->status,
                 'reviewer_type' => $review->reviewer_type,
-                'reviewer' => $review->reviewer?->name,
+                'reviewer' => $this->reviewerName($review, $request->user()),
                 'overall_rating' => $review->overall_rating ? (float) $review->overall_rating : null,
                 'band' => $this->scorer->band(
                     $review->overall_rating ? (float) $review->overall_rating : null,
@@ -217,5 +218,23 @@ class PerformanceController extends Controller
             'history' => $this->performance->history($employee),
             'weights' => config('performance.reviewer_weights'),
         ]);
+    }
+
+    /**
+     * Who wrote a review — withheld for peer and subordinate feedback.
+     *
+     * 360 feedback is only honest if the person being rated cannot tell which
+     * colleague or which report said what; a named subordinate review is one
+     * nobody writes candidly twice. HR still sees the name (to act on abuse),
+     * and the writer sees their own. Self and supervisor reviews are named,
+     * because who wrote those is never a secret.
+     */
+    private function reviewerName(PerformanceReview $review, User $viewer): ?string
+    {
+        $anonymous = in_array($review->reviewer_type, ['peer', 'subordinate'], true)
+            && ! $viewer->isHrAdmin()
+            && $review->reviewer_id !== $viewer->id;
+
+        return $anonymous ? 'Anonymous '.$review->reviewer_type : $review->reviewer?->name;
     }
 }

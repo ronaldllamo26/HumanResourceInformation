@@ -103,6 +103,17 @@ class LeaveController extends Controller
             'remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        /*
+         * Credits are checked again at approval, not only at filing. A balance
+         * can shrink in between — corrected by HR, or spent by another request
+         * approved first — and approving anyway would push it negative.
+         */
+        $shortfall = $this->leave->creditShortfall($leaveRequest);
+
+        if ($shortfall !== null) {
+            return back()->with('error', $shortfall);
+        }
+
         $this->leave->approve($leaveRequest, $request->user(), $validated['remarks'] ?? null);
 
         return back()->with('success', 'Leave approved and credits deducted.');

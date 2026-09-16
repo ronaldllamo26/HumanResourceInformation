@@ -105,7 +105,8 @@ class ComplianceTest extends TestCase
             ->get('/hr/payroll/compliance')
             ->assertInertia(fn (Assert $page) => $page
                 ->has('missingIds', 0)
-                ->where('rows.0.identifier', '34-1234567-8'),
+                // Masked on screen; the CSV export carries the full number.
+                ->where('rows.0.identifier', '••••••5678'),
             );
     }
 

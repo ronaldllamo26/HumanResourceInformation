@@ -258,7 +258,7 @@ class IntegrationApiTest extends TestCase
         $body = $this->getJson('/api/v1/analytics/workforce')->assertOk()->json('data');
 
         $this->assertSame(4, $body['headcount']['total']);
-        $this->assertArrayHasKey('attendance', $body);
+        $this->assertArrayNotHasKey('attendance', $body);
 
         /*
          * A dashboard needs shapes, not people. An endpoint that hands over

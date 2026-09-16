@@ -2,26 +2,22 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AttendanceLog;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Employee;
-use App\Models\OvertimeRequest;
 use App\Services\EmployeeService;
-use App\Services\TimekeepingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * AI & Analytics — Workforce demographics, trends, and timekeeping intelligence.
+ * AI & Analytics — Workforce demographics and trends.
  */
 class AnalyticsController extends Controller
 {
     public function __construct(
         private readonly EmployeeService $employees,
-        private readonly TimekeepingService $timekeeping,
     ) {}
 
     /**
@@ -69,59 +65,6 @@ class AnalyticsController extends Controller
             'departmentHeadcounts' => $this->departmentHeadcounts(),
             'genderMix' => $this->genderMix($activeEmployees),
             'statusMix' => $this->statusMix(),
-        ]);
-    }
-
-    /**
-     * Attendance & Labor Cost Insights.
-     */
-    public function attendance(Request $request): Response
-    {
-        abort_unless($request->user()->isHrAdmin(), 403);
-
-        $from = $request->query('from', Carbon::now()->startOfMonth()->toDateString());
-        $to = $request->query('to', Carbon::now()->endOfMonth()->toDateString());
-
-        $startDate = Carbon::parse($from)->startOfDay();
-        $endDate = Carbon::parse($to)->endOfDay();
-
-        $logs = AttendanceLog::whereBetween('log_date', [$startDate, $endDate])->get();
-
-        $totalLogs = $logs->count();
-        $presentLogs = $logs->whereIn('status', [AttendanceLog::STATUS_PRESENT, AttendanceLog::STATUS_LATE, AttendanceLog::STATUS_UNDERTIME])->count();
-        $absentLogs = $logs->where('status', AttendanceLog::STATUS_ABSENT)->count();
-        $lateLogs = $logs->where('late_minutes', '>', 0);
-        $undertimeLogs = $logs->where('undertime_minutes', '>', 0);
-
-        $attendanceRate = ($presentLogs + $absentLogs) > 0
-            ? round(($presentLogs / ($presentLogs + $absentLogs)) * 100, 1)
-            : 0;
-
-        $approvedOt = OvertimeRequest::whereBetween('date', [$startDate, $endDate])
-            ->where('status', OvertimeRequest::STATUS_APPROVED)
-            ->get();
-
-        $totalOtHours = round((float) $approvedOt->sum('hours'), 1);
-
-        return Inertia::render('HR/Analytics/Attendance', [
-            'filters' => [
-                'from' => $from,
-                'to' => $to,
-            ],
-            'summary' => [
-                'attendance_rate' => $attendanceRate,
-                'present_count' => $presentLogs,
-                'absent_count' => $absentLogs,
-                'late_count' => $lateLogs->count(),
-                'total_late_minutes' => (int) $lateLogs->sum('late_minutes'),
-                'undertime_count' => $undertimeLogs->count(),
-                'total_undertime_minutes' => (int) $undertimeLogs->sum('undertime_minutes'),
-                'total_ot_hours' => $totalOtHours,
-            ],
-            'dayOfWeekPatterns' => $this->dayOfWeekPatterns($logs),
-            'monthlyOtTrend' => $this->monthlyOtTrend(Carbon::today()),
-            'departmentAttendance' => $this->departmentAttendance($startDate, $endDate),
-            'frequentTardiness' => $this->frequentTardiness($startDate, $endDate),
         ]);
     }
 
@@ -263,98 +206,5 @@ class AnalyticsController extends Controller
             ['label' => 'Probationary', 'count' => (int) ($counts['probationary'] ?? 0)],
             ['label' => 'Contractual / Project', 'count' => (int) (($counts['contractual'] ?? 0) + ($counts['project-based'] ?? 0))],
         ];
-    }
-
-    /** @return array<int, array{day: string, present: int, late: int, absent: int, rate: int}> */
-    private function dayOfWeekPatterns($logs): array
-    {
-        $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        $grouped = $logs->groupBy(fn (AttendanceLog $log) => $log->log_date ? $log->log_date->format('l') : 'Unknown');
-
-        $result = [];
-
-        foreach ($days as $day) {
-            $dayLogs = $grouped[$day] ?? collect();
-            $present = $dayLogs->whereIn('status', [AttendanceLog::STATUS_PRESENT, AttendanceLog::STATUS_LATE, AttendanceLog::STATUS_UNDERTIME])->count();
-            $late = $dayLogs->where('late_minutes', '>', 0)->count();
-            $absent = $dayLogs->where('status', AttendanceLog::STATUS_ABSENT)->count();
-            $expected = $present + $absent;
-
-            $result[] = [
-                'day' => $day,
-                'present' => $present,
-                'late' => $late,
-                'absent' => $absent,
-                'rate' => $expected > 0 ? (int) round(($present / $expected) * 100) : 0,
-            ];
-        }
-
-        return $result;
-    }
-
-    /** @return array<int, array{month: string, hours: float}> */
-    private function monthlyOtTrend(Carbon $today): array
-    {
-        $result = [];
-
-        for ($i = 5; $i >= 0; $i--) {
-            $month = $today->copy()->subMonths($i);
-            $start = $month->copy()->startOfMonth();
-            $end = $month->copy()->endOfMonth();
-
-            $hours = (float) OvertimeRequest::whereBetween('date', [$start, $end])
-                ->where('status', OvertimeRequest::STATUS_APPROVED)
-                ->sum('hours');
-
-            $result[] = [
-                'month' => $month->format('M Y'),
-                'hours' => round($hours, 1),
-            ];
-        }
-
-        return $result;
-    }
-
-    /** @return array<int, array{name: string, present: int, absent: int, rate: int}> */
-    private function departmentAttendance(Carbon $start, Carbon $end): array
-    {
-        return Department::with(['employees.attendanceLogs' => fn ($q) => $q->whereBetween('log_date', [$start, $end])])
-            ->get(['id', 'name'])
-            ->map(function (Department $dept) {
-                $logs = $dept->employees->flatMap->attendanceLogs;
-                $present = $logs->whereIn('status', [AttendanceLog::STATUS_PRESENT, AttendanceLog::STATUS_LATE, AttendanceLog::STATUS_UNDERTIME])->count();
-                $absent = $logs->where('status', AttendanceLog::STATUS_ABSENT)->count();
-                $expected = $present + $absent;
-
-                return [
-                    'name' => $dept->name,
-                    'present' => $present,
-                    'absent' => $absent,
-                    'rate' => $expected > 0 ? (int) round(($present / $expected) * 100) : 0,
-                ];
-            })
-            ->sortByDesc('rate')
-            ->values()
-            ->all();
-    }
-
-    /** @return array<int, array{id: int, name: string, department: string, late_count: int, late_minutes: int}> */
-    private function frequentTardiness(Carbon $start, Carbon $end): array
-    {
-        return Employee::whereHas('attendanceLogs', fn ($q) => $q->whereBetween('log_date', [$start, $end])->where('late_minutes', '>', 0))
-            ->with(['department:id,name'])
-            ->withCount(['attendanceLogs as late_count' => fn ($q) => $q->whereBetween('log_date', [$start, $end])->where('late_minutes', '>', 0)])
-            ->withSum(['attendanceLogs as total_late_minutes' => fn ($q) => $q->whereBetween('log_date', [$start, $end])], 'late_minutes')
-            ->orderByDesc('late_count')
-            ->take(5)
-            ->get()
-            ->map(fn (Employee $emp) => [
-                'id' => $emp->id,
-                'name' => $emp->full_name,
-                'department' => $emp->department?->name ?? '—',
-                'late_count' => (int) $emp->late_count,
-                'late_minutes' => (int) ($emp->total_late_minutes ?? 0),
-            ])
-            ->all();
     }
 }

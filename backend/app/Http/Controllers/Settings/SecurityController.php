@@ -7,6 +7,7 @@ use App\Listeners\RecordAuthenticationEvents;
 use App\Models\AuditLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AuditLogSigner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -69,6 +70,13 @@ class SecurityController extends Controller
             // RequirePasswordChange sent them here silently; without this the
             // page reads as a broken link rather than as a step to complete.
             'mustChangePassword' => (bool) $user->must_change_password,
+
+            'privacy' => [
+                'acknowledged_at' => $user->hasAcknowledgedPrivacyNotice()
+                    ? $user->privacy_acknowledged_at?->toIso8601String()
+                    : null,
+                'version' => config('privacy.notice_version'),
+            ],
         ]);
     }
 
@@ -157,6 +165,28 @@ class SecurityController extends Controller
         return back()->with('success', 'Profile updated.');
     }
 
+    /**
+     * Checks every audit row against its tamper-evidence signature.
+     *
+     * Behind `viewAuditLog`, the same people who read the log. The result is
+     * flashed rather than stored: the point is to look now.
+     */
+    public function verifyAuditLog(AuditLogSigner $signer): RedirectResponse
+    {
+        Gate::authorize('viewAuditLog', Setting::class);
+
+        $result = $signer->verify();
+        $altered = count($result['altered']);
+
+        $summary = "Checked {$result['checked']} audit entries: {$result['valid']} verified";
+        $summary .= $result['unsigned'] > 0 ? ", {$result['unsigned']} unsigned" : '';
+        $summary .= $result['gaps'] > 0 ? ", {$result['gaps']} missing id(s) (a deleted entry, or a cancelled save)" : '';
+
+        return $altered > 0
+            ? back()->with('error', "{$summary}. {$altered} ENTRY(IES) WERE ALTERED — ids ".implode(', ', $result['altered']).'.')
+            : back()->with('success', "{$summary}. No entry has been altered.");
+    }
+
     /** Signs every other session out — the "I lost my laptop" button. */
     public function revokeTokens(Request $request): RedirectResponse
     {
@@ -235,7 +265,11 @@ class SecurityController extends Controller
                 'subject' => class_basename($entry->auditable_type),
                 'subject_id' => $entry->auditable_id,
                 'user' => $entry->user?->name ?? 'System',
-                'changed' => array_keys($entry->new_values ?? []),
+                // A read has nothing that changed; say what was read and how
+                // instead — "reveal sss_number" is the line worth finding.
+                'changed' => $entry->event === 'accessed'
+                    ? [trim(($entry->new_values['how'] ?? '').' '.($entry->new_values['field'] ?? ''))]
+                    : array_keys($entry->new_values ?? []),
                 // For a failed sign-in this is the whole point of the row: the
                 // account has no id to show when the address is not one of ours.
                 // Rows written before sign-in moved to usernames hold `email`.

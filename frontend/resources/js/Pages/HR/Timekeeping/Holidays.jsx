@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { CalendarDays, Plus, TriangleAlert } from 'lucide-react';
+import { CalendarDays, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Badge,
@@ -22,34 +22,44 @@ import {
     TR,
 } from '@/Components/ui';
 import { formatDate } from '@/lib/utils';
+import { TIMEKEEPING_CRUMBS } from './Partials/shared';
 
-const BLANK = {
-    name: '',
-    date: '',
-    type: 'regular',
-    is_nationwide: true,
-};
+const BLANK = { name: '', date: '', type: 'regular' };
 
-export default function Holidays({ holidays, filters, years, summary, nextYear, types, can }) {
-    const [creating, setCreating] = useState(false);
+const TYPES = [
+    { value: 'regular', label: 'Regular holiday' },
+    { value: 'special', label: 'Special non-working day' },
+];
+
+export default function Holidays({ holidays, filters, years, summary, nextYear, can }) {
+    const [editing, setEditing] = useState(null);
     const form = useForm(BLANK);
 
-    const open = () => {
+    const open = (holiday = null) => {
         form.clearErrors();
-        form.setData({ ...BLANK, date: `${filters.year}-01-01` });
-        setCreating(true);
+        form.setData(
+            holiday
+                ? { name: holiday.name, date: holiday.date, type: holiday.type }
+                : { ...BLANK, date: `${filters.year}-01-01` },
+        );
+        setEditing(holiday ?? 'new');
     };
 
     const submit = (event) => {
         event.preventDefault();
+        const options = { preserveScroll: true, onSuccess: () => setEditing(null) };
 
-        form.post('/hr/timekeeping/holidays', {
-            preserveScroll: true,
-            onSuccess: () => {
-                form.reset();
-                setCreating(false);
-            },
-        });
+        if (editing === 'new') {
+            form.post('/hr/timekeeping/holidays', options);
+        } else {
+            form.put(`/hr/timekeeping/holidays/${editing.id}`, options);
+        }
+    };
+
+    const remove = (holiday) => {
+        if (window.confirm(`Remove ${holiday.name} (${formatDate(holiday.date)})?`)) {
+            router.delete(`/hr/timekeeping/holidays/${holiday.id}`, { preserveScroll: true });
+        }
     };
 
     const changeYear = (year) =>
@@ -61,57 +71,45 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
 
     return (
         <AppLayout
-            title="Holidays"
-            breadcrumbs={[
-                { label: 'Human Resource' },
-                { label: 'Timekeeping', href: '/hr/timekeeping' },
-                { label: 'Holidays' },
-            ]}
+            title="Holiday Calendar"
+            breadcrumbs={[...TIMEKEEPING_CRUMBS, { label: 'Holiday Calendar' }]}
         >
             <div className="mb-5 grid gap-4 sm:grid-cols-3">
-                {/* Grey at zero, and that zero is the whole reason this screen
-                    warns about the next year: an empty holiday list silently
-                    charges employees leave credits for days they should not be
-                    charged for. */}
                 <StatCard
                     label={`Holidays in ${filters.year}`}
                     value={summary.total}
                     icon={CalendarDays}
                     tone={summary.total > 0 ? 'primary' : 'warning'}
-                    hint="read by leave, attendance, and payroll"
+                    hint="read by attendance, leave and payroll"
                 />
-
                 <StatCard
                     label="Regular"
                     value={summary.regular}
                     icon={CalendarDays}
                     tone={summary.regular > 0 ? 'info' : 'muted'}
-                    hint="200% premium when worked"
+                    hint="200% when worked"
                 />
-
                 <StatCard
-                    label="Special Non-Working"
+                    label="Special non-working"
                     value={summary.special}
                     icon={CalendarDays}
                     tone={summary.special > 0 ? 'info' : 'muted'}
-                    hint="130% premium when worked"
+                    hint="130% when worked"
                 />
             </div>
 
-            {/* Proclamations land late in the year, and the cost of forgetting
-                is silent: leave gets charged for days it shouldn't be. */}
-            {nextYear.count === 0 && (
+            {nextYear.count === 0 && can.manage && (
                 <Card className="mb-5">
-                    <div className="flex items-start gap-3 p-4">
+                    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
                         <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
                         <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-foreground">
                                 No holidays recorded for {nextYear.year} yet
                             </p>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                                Leave requests spanning {nextYear.year} will be charged for
-                                holidays as if they were ordinary working days, and attendance
-                                on those dates will not be marked as a holiday.
+                                Leave spanning {nextYear.year} would be charged for holidays as
+                                if they were working days, and nobody working one would get the
+                                premium.
                             </p>
                         </div>
                         <Button
@@ -128,13 +126,13 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
             <Card>
                 <CardHeader
                     title={`${filters.year} Holiday Calendar`}
-                    description="Read by leave costing, attendance status, and holiday pay."
+                    description="Movable holidays (Holy Week, the Eids, Chinese New Year) are added once they are proclaimed."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Select
                                 value={String(filters.year)}
                                 onChange={(event) => changeYear(event.target.value)}
-                                aria-label="Filter by year"
+                                aria-label="Year"
                                 className="w-full sm:w-32"
                                 options={years.map((year) => ({
                                     value: String(year),
@@ -142,7 +140,7 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                                 }))}
                             />
                             {can.manage && (
-                                <Button onClick={open}>
+                                <Button onClick={() => open()}>
                                     <Plus className="h-4 w-4" />
                                     Add Holiday
                                 </Button>
@@ -150,24 +148,22 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                         </div>
                     }
                 />
-
                 <Table>
                     <THead>
                         <TR>
                             <TH>Date</TH>
                             <TH>Holiday</TH>
                             <TH>Type</TH>
-                            <TH>Coverage</TH>
+                            {can.manage && <TH className="text-right">Actions</TH>}
                         </TR>
                     </THead>
-
                     <TBody>
                         {holidays.length === 0 ? (
                             <TableEmpty
-                                colSpan={4}
+                                colSpan={can.manage ? 4 : 3}
                                 icon={CalendarDays}
                                 title={`No holidays recorded for ${filters.year}`}
-                                description="Leave, attendance, and payroll will treat every day this year as an ordinary working day until holidays are added."
+                                description="Every day this year is treated as an ordinary working day until holidays are added."
                             />
                         ) : (
                             holidays.map((holiday) => (
@@ -177,30 +173,44 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                                             {formatDate(holiday.date)}
                                         </p>
                                         <p className="text-xs text-muted-foreground">
-                                            {holiday.day_of_week}
+                                            {holiday.day}
                                         </p>
                                     </TD>
-
                                     <TD className="text-sm text-foreground">{holiday.name}</TD>
-
                                     <TD>
                                         <Badge
                                             variant={
                                                 holiday.type === 'regular' ? 'primary' : 'muted'
                                             }
                                         >
-                                            {holiday.type === 'regular'
-                                                ? 'Regular'
-                                                : 'Special Non-Working'}
+                                            {holiday.type === 'regular' ? 'Regular' : 'Special'}
                                         </Badge>
                                         <span className="ml-2 text-xs text-muted-foreground">
-                                            ×{holiday.pay_multiplier}
+                                            ×{holiday.multiplier}
                                         </span>
                                     </TD>
-
-                                    <TD className="text-sm text-muted-foreground">
-                                        {holiday.is_nationwide ? 'Nationwide' : 'Local'}
-                                    </TD>
+                                    {can.manage && (
+                                        <TD className="text-right">
+                                            <div className="flex justify-end gap-1">
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    onClick={() => open(holiday)}
+                                                    aria-label="Edit holiday"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    onClick={() => remove(holiday)}
+                                                    aria-label="Remove holiday"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </TD>
+                                    )}
                                 </TR>
                             ))
                         )}
@@ -208,21 +218,24 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                 </Table>
             </Card>
 
-            <Modal show={creating} onClose={() => setCreating(false)} title="Add Holiday">
+            <Modal
+                show={editing !== null}
+                onClose={() => setEditing(null)}
+                title={editing === 'new' ? 'Add Holiday' : 'Edit Holiday'}
+            >
                 <form onSubmit={submit} className="space-y-4">
-                    <Field label="Name" error={form.errors.name}>
+                    <Field label="Name" required error={form.errors.name}>
                         {({ id }) => (
                             <Input
                                 id={id}
                                 value={form.data.name}
                                 onChange={(event) => form.setData('name', event.target.value)}
-                                placeholder="e.g. Araw ng Kagitingan"
+                                placeholder="e.g. Eid'l Fitr"
                                 required
                             />
                         )}
                     </Field>
-
-                    <Field label="Date" error={form.errors.date}>
+                    <Field label="Date" required error={form.errors.date}>
                         {({ id }) => (
                             <DateInput
                                 id={id}
@@ -232,40 +245,26 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                             />
                         )}
                     </Field>
-
-                    <Field label="Type" error={form.errors.type}>
+                    <Field label="Type" required error={form.errors.type}>
                         {({ id }) => (
                             <Select
                                 id={id}
                                 value={form.data.type}
                                 onChange={(event) => form.setData('type', event.target.value)}
-                                options={types}
+                                options={TYPES}
                             />
                         )}
                     </Field>
-
-                    <label className="flex items-center gap-2 text-sm text-foreground">
-                        <input
-                            type="checkbox"
-                            checked={form.data.is_nationwide}
-                            onChange={(event) =>
-                                form.setData('is_nationwide', event.target.checked)
-                            }
-                            className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                        />
-                        Nationwide
-                    </label>
-
                     <div className="flex justify-end gap-2 pt-2">
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => setCreating(false)}
+                            onClick={() => setEditing(null)}
                         >
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={form.processing}>
-                            Add Holiday
+                        <Button type="submit" loading={form.processing}>
+                            Save Holiday
                         </Button>
                     </div>
                 </form>

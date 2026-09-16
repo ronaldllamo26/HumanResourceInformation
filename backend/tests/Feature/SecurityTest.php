@@ -180,27 +180,6 @@ class SecurityTest extends TestCase
         $this->assertSame(Employee::class, $entry->auditable_type);
     }
 
-    public function test_the_attendance_report_export_records_its_range(): void
-    {
-        /*
-         * The export takes from/to and nothing else now, so there is no
-         * `period` left to make them load-bearing. That was the fix for this
-         * test asserting against whatever month the suite happened to run in;
-         * the two dates are the only range the endpoint has.
-         */
-        $this->actingAs(User::factory()->hrStaff()->create())
-            ->get('/hr/timekeeping/export?from=2026-08-01&to=2026-08-31')
-            ->assertOk();
-
-        $entry = AuditLog::where('event', DataAccessLogger::EVENT_EXPORTED)->latest('id')->first();
-
-        $this->assertNotNull($entry);
-        $this->assertSame('attendance-report', $entry->new_values['report']);
-        // The range is what makes the row answer anything.
-        $this->assertSame('2026-08-01', $entry->new_values['from']);
-        $this->assertSame('2026-08-31', $entry->new_values['to']);
-    }
-
     // --- What a stolen database dump would hold -----------------------------
 
     /**

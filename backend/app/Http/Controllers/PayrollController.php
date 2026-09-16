@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
+use App\Services\PayrollAnomalyScanner;
 use App\Services\PayrollReadinessChecker;
 use App\Services\PayrollService;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +23,7 @@ class PayrollController extends Controller
     public function __construct(
         private readonly PayrollService $payroll,
         private readonly PayrollReadinessChecker $readiness,
+        private readonly PayrollAnomalyScanner $anomalies,
     ) {}
 
     public function index(Request $request): Response|RedirectResponse
@@ -195,6 +197,14 @@ class PayrollController extends Controller
                 PayrollRun::STATUS_FOR_APPROVAL,
             ], true)
                 ? $this->readiness->check($payrollRun->period)
+                : null,
+            // The computed money, checked for what fraud and mistakes look
+            // like, while the approver can still send the run back.
+            'anomalies' => in_array($payrollRun->status, [
+                PayrollRun::STATUS_DRAFT,
+                PayrollRun::STATUS_FOR_APPROVAL,
+            ], true)
+                ? $this->anomalies->scan($payrollRun)
                 : null,
             'can' => [
                 'recompute' => $request->user()->can('update', $payrollRun),

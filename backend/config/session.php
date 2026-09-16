@@ -75,7 +75,10 @@ return [
     |
     */
 
-    'encrypt' => env('SESSION_ENCRYPT', false),
+    // On unless switched off. Session rows sit in the database, and they carry
+    // flash messages — including the temporary password Users & Access and the
+    // employee form hand out — which would otherwise be stored as plain text.
+    'encrypt' => env('SESSION_ENCRYPT', true),
 
     /*
     |--------------------------------------------------------------------------

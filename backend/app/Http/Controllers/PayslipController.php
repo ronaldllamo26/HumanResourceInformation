@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Employee;
 use App\Models\Payslip;
 use App\Services\PayrollService;
 use Illuminate\Http\Request;
@@ -80,12 +81,15 @@ class PayslipController extends Controller
                     'employee_number' => $payslip->employee->employee_number,
                     'position' => $payslip->employee->position?->title,
                     'department' => $payslip->employee->department?->name,
-                    'sss_number' => $payslip->employee->sss_number,
-                    'philhealth_number' => $payslip->employee->philhealth_number,
-                    'pagibig_number' => $payslip->employee->pagibig_number,
-                    'tin' => $payslip->employee->tin,
+                    // A payslip is printed, saved as PDF and emailed around, so
+                    // it carries the last four characters only — enough to
+                    // recognise, not enough to use.
+                    'sss_number' => Employee::mask($payslip->employee->sss_number),
+                    'philhealth_number' => Employee::mask($payslip->employee->philhealth_number),
+                    'pagibig_number' => Employee::mask($payslip->employee->pagibig_number),
+                    'tin' => Employee::mask($payslip->employee->tin),
                     'bank_name' => $payslip->employee->bank_name,
-                    'bank_account_number' => $payslip->employee->bank_account_number,
+                    'bank_account_number' => Employee::mask($payslip->employee->bank_account_number),
                 ],
 
                 'period' => [

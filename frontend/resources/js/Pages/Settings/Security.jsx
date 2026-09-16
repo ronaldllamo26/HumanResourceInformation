@@ -1,6 +1,6 @@
-import { router, useForm } from '@inertiajs/react';
+import { Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { History, KeyRound, TriangleAlert } from 'lucide-react';
+import { History, KeyRound, ShieldCheck, TriangleAlert } from 'lucide-react';
 import SettingsLayout from '@/Layouts/SettingsLayout';
 import {
     Badge,
@@ -49,6 +49,7 @@ export default function Security({
     canViewAudit,
     canRename = false,
     mustChangePassword = false,
+    privacy = null,
 }) {
     const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -174,6 +175,38 @@ export default function Security({
                 </CardBody>
             </Card>
 
+            {privacy && (
+                <Card>
+                    <CardHeader
+                        title="Privacy Notice"
+                        description="What is collected about you, why, and who can see it (RA 10173)."
+                        action={
+                            <Link href={route('privacy.notice')}>
+                                <Button variant="outline">
+                                    <ShieldCheck className="h-4 w-4" />
+                                    Read notice
+                                </Button>
+                            </Link>
+                        }
+                    />
+                    <CardBody>
+                        <p className="text-sm text-muted-foreground">
+                            {privacy.acknowledged_at ? (
+                                <>
+                                    You acknowledged version {privacy.version} on{' '}
+                                    <span className="font-medium text-foreground">
+                                        {formatDate(privacy.acknowledged_at)}
+                                    </span>
+                                    .
+                                </>
+                            ) : (
+                                <>You have not acknowledged the current version yet.</>
+                            )}
+                        </p>
+                    </CardBody>
+                </Card>
+            )}
+
             <Card>
                 <CardHeader
                     title="API Tokens"
@@ -277,6 +310,22 @@ export default function Security({
                                         {option.label}
                                     </Button>
                                 ))}
+                                {/* Every entry is signed when written; this checks
+                                    none has been edited since. */}
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                        router.post(
+                                            route('settings.security.audit.verify'),
+                                            {},
+                                            { preserveScroll: true },
+                                        )
+                                    }
+                                >
+                                    <ShieldCheck className="h-4 w-4" />
+                                    Verify integrity
+                                </Button>
                             </div>
                         }
                     />

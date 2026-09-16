@@ -325,6 +325,10 @@ class DirectoryTest extends TestCase
 
         Employee::factory()->create([
             'first_name' => 'Pedro',
+            // Fixed, not Faker's: a random middle name or email containing
+            // "juan" made the search test fail now and then.
+            'middle_name' => null,
+            'email' => 'pedro@primepower.test',
             'last_name' => 'Santos',
             'department_id' => $department->id,
             'position_id' => $position->id,

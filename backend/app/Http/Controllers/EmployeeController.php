@@ -6,6 +6,7 @@ use App\Http\Requests\StoreEmployeeDocumentRequest;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
+use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\DocumentScan;
@@ -76,8 +77,10 @@ class EmployeeController extends Controller
             // first load, or a filter/sort change — ignores this and renders
             // fresh, so switching filters correctly starts back at page 1
             // instead of showing a merged mix of two result sets.
-            'employees' => Inertia::merge(EmployeeResource::collection($employees))
-                ->append('data', 'id'),
+            'employees' => Inertia::merge(tap(
+                EmployeeResource::collection($employees),
+                fn ($collection) => $collection->collection->each->masked(),
+            ))->append('data', 'id'),
             'statistics' => $this->employees->statistics($this->employees->scopedQuery($request->user())),
             'departments' => Department::orderBy('name')->get(['id', 'name']),
             // Counted, not just listed: "how many are with this client" is the
@@ -120,12 +123,26 @@ class EmployeeController extends Controller
     {
         Gate::authorize('create', Employee::class);
 
+        /*
+         * Two ways in: approving a Core 1 endorsement, or adding somebody
+         * directly. A direct add has no endorsement to carry the decision, so
+         * the form asks for the reason instead and `store()` records it.
+         */
+        if (! $request->filled('endorsement')) {
+            return Inertia::render('HR/Employees/Create', [
+                'options' => $this->formOptions(),
+                'endorsement' => null,
+                'prefill' => [],
+                'can' => ['scanForm' => app(DocumentScanner::class)->isEnabled()],
+            ]);
+        }
+
         $endorsement = EmployeeEndorsement::find($request->integer('endorsement'));
 
         if (! $endorsement) {
             return redirect()
                 ->route('hr.endorsements.index')
-                ->with('info', 'New employees start from a Core 1 endorsement. Approve one here to open the form.');
+                ->with('info', 'That endorsement no longer exists.');
         }
 
         // Re-asked at the form rather than trusted from the link: a decision
@@ -173,12 +190,16 @@ class EmployeeController extends Controller
          * decided endorsement fails here, rather than after a person has been
          * put on the payroll with nothing to attach them to.
          */
+        if (! $request->filled('endorsement_id')) {
+            return $this->storeDirectHire($request);
+        }
+
         $endorsement = EmployeeEndorsement::find($request->integer('endorsement_id'));
 
         if (! $endorsement) {
             return redirect()
                 ->route('hr.endorsements.index')
-                ->with('info', 'New employees start from a Core 1 endorsement. Approve one here to open the form.');
+                ->with('info', 'That endorsement no longer exists.');
         }
 
         Gate::authorize('decide', $endorsement);
@@ -223,6 +244,15 @@ class EmployeeController extends Controller
     {
         Gate::authorize('view', $employee);
 
+        // Somebody else opening a 201 file is a read of personal data and
+        // is recorded like a document preview. A person opening their own
+        // record is not a finding, and logging it would bury the ones that are.
+        if ($employee->user_id !== $request->user()->id) {
+            app(DataAccessLogger::class)->accessed($employee, 'view', [
+                'employee' => $employee->full_name,
+            ]);
+        }
+
         $employee->load([
             'department:id,name',
             'client:id,code,name,wage_region',
@@ -235,7 +265,7 @@ class EmployeeController extends Controller
         ]);
 
         return Inertia::render('HR/Employees/Show', [
-            'employee' => new EmployeeResource($employee),
+            'employee' => (new EmployeeResource($employee))->masked(),
             'isMyProfile' => $isMyProfile || $employee->user_id === $request->user()?->id,
 
             /*
@@ -313,9 +343,13 @@ class EmployeeController extends Controller
         ]);
     }
 
-    public function edit(Employee $employee): Response
+    public function edit(Employee $employee, DataAccessLogger $access): Response
     {
         Gate::authorize('update', $employee);
+
+        // The edit form carries every number in full, so opening it is a read
+        // of all of them at once.
+        $access->accessed($employee, 'edit_form', ['employee' => $employee->full_name]);
 
         return Inertia::render('HR/Employees/Edit', [
             'employee' => new EmployeeResource($employee),
@@ -502,6 +536,36 @@ class EmployeeController extends Controller
      * link keeps forcing a download and neither can change the other by
      * accident. Behind the same `view` gate; these are still private files.
      */
+    /**
+     * One hidden number, in full, for the person who pressed Show.
+     *
+     * The screen only ever receives the last four characters; the full value
+     * crosses to a browser here, one field at a time, and each crossing is
+     * logged with the field named. Asked of the same gate that decides whether
+     * the masked value is drawn at all, so Show can never reveal more than the
+     * card already admitted existed.
+     */
+    public function reveal(Request $request, Employee $employee, DataAccessLogger $access): JsonResponse
+    {
+        $field = (string) $request->validate([
+            'field' => ['required', Rule::in(Employee::MASKABLE)],
+        ])['field'];
+
+        Gate::authorize(
+            in_array($field, Employee::MASKABLE_WITH_VIEW, true) ? 'view' : 'viewSensitive',
+            $employee,
+        );
+
+        $access->accessed($employee, 'reveal', [
+            'field' => $field,
+            'employee' => $employee->full_name,
+        ]);
+
+        return response()
+            ->json(['field' => $field, 'value' => $employee->{$field}])
+            ->header('Cache-Control', 'no-store');
+    }
+
     public function previewDocument(
         Employee $employee,
         EmployeeDocument $document,
@@ -706,6 +770,46 @@ class EmployeeController extends Controller
                     .'Past payslips regroup under the new client — deployment is not dated.'
                 : "{$employee->full_name} brought in-house from {$from}, and is now internal staff.",
         );
+    }
+
+    /**
+     * Somebody added without a Core 1 endorsement.
+     *
+     * Allowed, because not every hire comes through recruitment — a
+     * transferee, a rehire, an urgent replacement. What an endorsement would
+     * have recorded (that someone decided, who, and why) is recorded here
+     * instead: the reason is required, and it is written to the audit log
+     * beside the created record, where it can be found later.
+     */
+    private function storeDirectHire(StoreEmployeeRequest $request): RedirectResponse
+    {
+        $reason = $request->validate([
+            'direct_hire_reason' => ['required', 'string', 'min:10', 'max:500'],
+        ], [
+            'direct_hire_reason.required' => 'Say why this employee is added directly instead of through a Core 1 endorsement.',
+            'direct_hire_reason.min' => 'Give a little more detail — at least 10 characters.',
+        ])['direct_hire_reason'];
+
+        $employee = $this->employees->create($request->validated(), $request->file('photo'));
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => Employee::class,
+            'auditable_id' => $employee->id,
+            'event' => 'direct_hire',
+            'new_values' => ['reason' => $reason, 'employee' => $employee->full_name],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $message = "Employee {$employee->employee_number} added directly.";
+
+        if ($this->employees->generatedPassword) {
+            $username = $employee->user?->username;
+            $message .= " Login: {$username} / temporary password: {$this->employees->generatedPassword}";
+        }
+
+        return redirect()->route('hr.employees.show', $employee)->with('success', $message);
     }
 
     /** Dropdown data shared by the create and edit forms. */

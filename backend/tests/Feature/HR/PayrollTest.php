@@ -2,13 +2,11 @@
 
 namespace Tests\Feature\HR;
 
-use App\Models\AttendanceLog;
 use App\Models\Employee;
 use App\Models\EmployeeAllowance;
 use App\Models\EmployeeLoan;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
-use App\Models\OvertimeRequest;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
 use App\Models\Payslip;
@@ -112,67 +110,27 @@ class PayrollTest extends TestCase
 
     // --- The figures --------------------------------------------------------
 
-    public function test_a_payslip_reflects_attendance_overtime_and_deductions(): void
+    /**
+     * With Time & Attendance removed, a payslip is the basic salary for the
+     * period and nothing attendance-derived: no overtime, lateness or absence.
+     */
+    public function test_a_payslip_is_basic_pay_with_no_attendance_figures(): void
     {
         $period = $this->period();
-        $employee = Employee::factory()->create(['basic_salary' => self::SALARY]);
-
-        // Two late days totalling 60 minutes, and one absence.
-        AttendanceLog::factory()->create([
-            'employee_id' => $employee->id,
-            'log_date' => '2026-08-03',
-            'status' => 'late',
-            'late_minutes' => 60,
-            'hours_worked' => 8,
-        ]);
-        AttendanceLog::factory()->absent()->create([
-            'employee_id' => $employee->id,
-            'log_date' => '2026-08-04',
-        ]);
-
-        // Approved overtime is what gets paid.
-        OvertimeRequest::create([
-            'employee_id' => $employee->id,
-            'date' => '2026-08-05',
-            'start_time' => '2026-08-05 17:00',
-            'end_time' => '2026-08-05 21:00',
-            'hours' => 4,
-            'reason' => 'Dispatch backlog.',
-            'status' => OvertimeRequest::STATUS_APPROVED,
-        ]);
+        Employee::factory()->create(['basic_salary' => self::SALARY]);
 
         $this->actingAs($this->hr())->post("/hr/payroll/periods/{$period->id}/generate");
 
         $payslip = Payslip::firstOrFail();
 
         $this->assertEquals(13050.00, (float) $payslip->basic_pay);
-        $this->assertEquals(750.00, (float) $payslip->overtime_pay);   // 150 x 1.25 x 4
-        $this->assertEquals(150.00, (float) $payslip->late_deduction); // 2.50 x 60
-        $this->assertEquals(1200.00, (float) $payslip->absence_deduction);
+        $this->assertEquals(0.0, (float) $payslip->overtime_pay);
+        $this->assertEquals(0.0, (float) $payslip->late_deduction);
+        $this->assertEquals(0.0, (float) $payslip->absence_deduction);
         $this->assertEquals(
             round((float) $payslip->gross_pay - (float) $payslip->deductions_total, 2),
             (float) $payslip->net_pay,
         );
-    }
-
-    public function test_pending_overtime_is_not_paid(): void
-    {
-        $period = $this->period();
-        $employee = Employee::factory()->create(['basic_salary' => self::SALARY]);
-
-        OvertimeRequest::create([
-            'employee_id' => $employee->id,
-            'date' => '2026-08-05',
-            'start_time' => '2026-08-05 17:00',
-            'end_time' => '2026-08-05 21:00',
-            'hours' => 4,
-            'reason' => 'Not yet approved.',
-            'status' => OvertimeRequest::STATUS_PENDING,
-        ]);
-
-        $this->actingAs($this->hr())->post("/hr/payroll/periods/{$period->id}/generate");
-
-        $this->assertEquals(0.0, (float) Payslip::firstOrFail()->overtime_pay);
     }
 
     public function test_unpaid_leave_is_deducted_but_paid_leave_is_not(): void
@@ -270,7 +228,11 @@ class PayrollTest extends TestCase
         $this->actingAs($admin)->post("/hr/payroll/runs/{$run->id}/approve")->assertRedirect();
         $this->assertSame(PayrollRun::STATUS_APPROVED, $run->fresh()->status);
 
-        $this->actingAs($hr)->post("/hr/payroll/runs/{$run->id}/paid")->assertRedirect();
+        // Confirming the transfer is a third pair of hands: not the processor.
+        $this->actingAs($hr)->post("/hr/payroll/runs/{$run->id}/paid")->assertForbidden();
+
+        $disburser = User::factory()->hrStaff()->create();
+        $this->actingAs($disburser)->post("/hr/payroll/runs/{$run->id}/paid")->assertRedirect();
         $this->assertSame(PayrollRun::STATUS_PAID, $run->fresh()->status);
     }
 
@@ -446,7 +408,7 @@ class PayrollTest extends TestCase
         $this->get('/hr/payroll')->assertRedirect('/login');
     }
 
-    public function test_approved_unpaid_leave_is_deducted_once_not_twice(): void
+    public function test_approved_unpaid_leave_is_still_deducted(): void
     {
         $employee = Employee::factory()->create(['basic_salary' => 30000]);
         $period = $this->period();
@@ -459,27 +421,13 @@ class PayrollTest extends TestCase
             'days_requested' => 2,
         ]);
 
-        // The DTR says absent for the same two days, which is what it should
-        // say — the person was not there.
-        foreach (['2026-08-03', '2026-08-04'] as $date) {
-            AttendanceLog::factory()->absent()->create([
-                'employee_id' => $employee->id,
-                'log_date' => $date,
-            ]);
-        }
-
         $inputs = app(PayrollService::class)->gatherInputs($period, $employee);
 
-        /*
-         * The two days are unpaid leave and nothing else. Counting them as
-         * absences *as well* charged authorised leave twice, and neither line
-         * on the payslip looked wrong on its own.
-         */
         $this->assertSame(0.0, $inputs['absent_days']);
         $this->assertSame(2.0, $inputs['unpaid_leave_days']);
     }
 
-    public function test_approved_paid_leave_is_not_deducted_as_an_absence(): void
+    public function test_approved_paid_leave_is_not_deducted(): void
     {
         $employee = Employee::factory()->create(['basic_salary' => 30000]);
         $period = $this->period();
@@ -492,36 +440,7 @@ class PayrollTest extends TestCase
             'days_requested' => 1,
         ]);
 
-        AttendanceLog::factory()->absent()->create([
-            'employee_id' => $employee->id,
-            'log_date' => '2026-08-05',
-        ]);
-
-        $inputs = app(PayrollService::class)->gatherInputs($period, $employee);
-
-        // A VL day is already inside the basic salary — that is what "paid
-        // leave" means — so taking it off again docked somebody for leave they
-        // were entitled to.
-        $this->assertSame(0.0, $inputs['absent_days']);
-        $this->assertSame(0.0, $inputs['unpaid_leave_days']);
-    }
-
-    public function test_an_absence_with_no_filed_leave_is_still_deducted(): void
-    {
-        $employee = Employee::factory()->create(['basic_salary' => 30000]);
-        $period = $this->period();
-
-        AttendanceLog::factory()->absent()->create([
-            'employee_id' => $employee->id,
-            'log_date' => '2026-08-06',
-        ]);
-
-        // AWOL. The whole point of the cross-check is that this one still
-        // costs the day.
-        $this->assertSame(
-            1.0,
-            app(PayrollService::class)->gatherInputs($period, $employee)['absent_days'],
-        );
+        $this->assertSame(0.0, app(PayrollService::class)->gatherInputs($period, $employee)['unpaid_leave_days']);
     }
 
     // --- Helpers ------------------------------------------------------------

@@ -25,6 +25,32 @@ class Employee extends Model
 
     public const STATUSES = ['active', 'inactive', 'on_leave'];
 
+    /** Employment statuses that mean the person no longer works here. */
+    public const SEPARATED_STATUSES = ['resigned', 'terminated'];
+
+    /**
+     * Numbers shown as their last four characters until somebody presses Show.
+     *
+     * The six encrypted columns: what a stolen screenshot, a shoulder-surfer or
+     * a shared screen is worth taking. The last four are enough to tell two
+     * records apart and to read one back over the phone.
+     */
+    public const MASKABLE = [
+        'sss_number',
+        'philhealth_number',
+        'pagibig_number',
+        'tin',
+        'bank_account_number',
+        'drivers_license_number',
+    ];
+
+    /**
+     * The licence number is outside `viewSensitive` — supervisors dispatching a
+     * driver already see it — so revealing it asks the same `view` the rest of
+     * the record does. Every other maskable number needs `viewSensitive`.
+     */
+    public const MASKABLE_WITH_VIEW = ['drivers_license_number'];
+
     /**
      * PrimePower is a manpower agency, so an employee is one of two things.
      *
@@ -41,6 +67,28 @@ class Employee extends Model
     protected $guarded = ['id'];
 
     protected $appends = ['full_name'];
+
+    /**
+     * `34-1234567-8` becomes `••••••5678`. A fixed run of dots rather than one
+     * per character, so the mask does not give away the number's length; a
+     * very short value shows fewer than four so most of it stays hidden.
+     */
+    public static function mask(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        $characters = preg_replace('/[^A-Za-z0-9]/', '', $value);
+
+        return str_repeat('•', 6).substr($characters, -min(4, max(strlen($characters) - 2, 1)));
+    }
+
+    public function hasLeft(): bool
+    {
+        return $this->status === 'inactive'
+            || in_array($this->employment_status, self::SEPARATED_STATUSES, true);
+    }
 
     // --- Relationships -----------------------------------------------------
 
@@ -96,11 +144,6 @@ class Employee extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(EmployeeDocument::class);
-    }
-
-    public function attendanceLogs(): HasMany
-    {
-        return $this->hasMany(AttendanceLog::class);
     }
 
     public function leaveRequests(): HasMany
@@ -285,6 +328,31 @@ class Employee extends Model
         $sequence = $latest ? ((int) substr($latest, strlen($prefix))) + 1 : 1;
 
         return $prefix.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    /*
+     * Leaving takes the login with it, however the record got there.
+     *
+     * A person is marked gone in four places — the employee form, the API, a
+     * released separation, and archiving — and only archiving used to switch
+     * the account off. So a resigned driver kept signing in to the 201 files
+     * and payslips of people still here. Hooked on the model so no path can
+     * forget. Only ever switches off: turning a login back on is a decision
+     * somebody makes (Users & Access, or restoring from the archive).
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (Employee $employee) {
+            if (! $employee->wasChanged(['status', 'employment_status']) || ! $employee->hasLeft()) {
+                return;
+            }
+
+            $user = $employee->user;
+
+            if ($user?->is_active) {
+                $user->update(['is_active' => false]);
+            }
+        });
     }
 
     protected function casts(): array

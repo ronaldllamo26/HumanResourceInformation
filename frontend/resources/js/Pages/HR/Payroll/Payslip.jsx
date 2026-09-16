@@ -121,16 +121,28 @@ export default function PayslipPage({ payslip }) {
                         <Detail label="TIN" value={employee.tin} />
                     </dl>
 
-                    {/* Attendance summary */}
-                    <div className="grid grid-cols-2 gap-4 border-b border-border py-5 sm:grid-cols-4">
-                        <Detail label="Days Worked" value={attendance.days_worked} />
-                        <Detail label="Overtime" value={`${attendance.overtime_hours} hrs`} />
-                        <Detail label="Tardiness" value={duration(attendance.late_minutes)} />
-                        <Detail
-                            label="Absences"
-                            value={`${attendance.absent_days + attendance.unpaid_leave_days} day(s)`}
-                        />
-                    </div>
+                    {/* Attendance summary — only on payslips computed while
+                        Time & Attendance existed; newer ones have none. */}
+                    {(attendance.days_worked > 0 ||
+                        attendance.overtime_hours > 0 ||
+                        attendance.late_minutes > 0 ||
+                        attendance.absent_days > 0) && (
+                        <div className="grid grid-cols-2 gap-4 border-b border-border py-5 sm:grid-cols-4">
+                            <Detail label="Days Worked" value={attendance.days_worked} />
+                            <Detail
+                                label="Overtime"
+                                value={`${attendance.overtime_hours} hrs`}
+                            />
+                            <Detail
+                                label="Tardiness"
+                                value={duration(attendance.late_minutes)}
+                            />
+                            <Detail
+                                label="Absences"
+                                value={`${attendance.absent_days + attendance.unpaid_leave_days} day(s)`}
+                            />
+                        </div>
+                    )}
 
                     {/* Earnings and deductions */}
                     <div className="grid gap-6 py-5 sm:grid-cols-2">

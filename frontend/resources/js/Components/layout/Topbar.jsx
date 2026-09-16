@@ -1,7 +1,8 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { Bell, Menu, Search, Settings, ShieldAlert } from 'lucide-react';
+import { Menu, Search, Settings, ShieldAlert } from 'lucide-react';
 import Dropdown from '@/Components/Dropdown';
+import NotificationBell from '@/Components/layout/NotificationBell';
 import ThemeToggle from '@/Components/layout/ThemeToggle';
 import { cn, initials } from '@/lib/utils';
 
@@ -14,7 +15,7 @@ const ROLE_LABELS = {
 
 export default function Topbar({ title, actions, onOpenMobile }) {
     const page = usePage();
-    const { auth, pendingApprovals = 0, expiringCredentials = 0 } = page.props;
+    const { auth, expiringCredentials = 0 } = page.props;
     const user = auth?.user;
 
     // Settings has no sidebar entry to light any more, so the gear says for
@@ -98,28 +99,7 @@ export default function Topbar({ title, actions, onOpenMobile }) {
                         </Link>
                     )}
 
-                    <Link
-                        href="/hr/leave?status=pending"
-                        aria-label={
-                            pendingApprovals > 0
-                                ? `${pendingApprovals} leave request(s) awaiting your approval`
-                                : 'Notifications'
-                        }
-                        title={
-                            pendingApprovals > 0
-                                ? `${pendingApprovals} awaiting your approval`
-                                : 'No pending approvals'
-                        }
-                        className="relative grid h-9 w-9 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                    >
-                        <Bell className="h-4.5 w-4.5" aria-hidden="true" />
-
-                        {pendingApprovals > 0 && (
-                            <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground">
-                                {pendingApprovals > 9 ? '9+' : pendingApprovals}
-                            </span>
-                        )}
-                    </Link>
+                    <NotificationBell />
 
                     {/* Settings sits in the top right beside the two
                         indicators, and is no longer a sidebar entry: it

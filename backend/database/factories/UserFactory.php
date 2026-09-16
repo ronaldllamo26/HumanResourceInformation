@@ -32,6 +32,10 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
             'role' => User::ROLE_EMPLOYEE,
             'is_active' => true,
+            // Acknowledged by default, so a test about something else is not
+            // redirected to the notice. See withoutPrivacyAcknowledgement().
+            'privacy_notice_version' => config('privacy.notice_version'),
+            'privacy_acknowledged_at' => now(),
         ];
     }
 
@@ -63,6 +67,14 @@ class UserFactory extends Factory
     public function supervisor(): static
     {
         return $this->role(User::ROLE_SUPERVISOR);
+    }
+
+    public function withoutPrivacyAcknowledgement(): static
+    {
+        return $this->state(fn () => [
+            'privacy_notice_version' => null,
+            'privacy_acknowledged_at' => null,
+        ]);
     }
 
     public function inactive(): static

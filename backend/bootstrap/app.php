@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePasswordChange;
+use App\Http\Middleware\RequirePrivacyAcknowledgement;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -27,9 +29,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            // Before the two holds below: a deactivated account is signed out,
+            // not asked to change its password or read the privacy notice.
+            EnsureAccountIsActive::class,
             // After HandleInertiaRequests, so the redirect it issues is still
             // an Inertia response rather than a full page load.
             RequirePasswordChange::class,
+            RequirePrivacyAcknowledgement::class,
         ]);
 
         // Both stacks: the API serves JSON to biometric devices and

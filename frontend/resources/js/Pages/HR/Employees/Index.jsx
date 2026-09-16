@@ -6,6 +6,7 @@ import {
     Loader2,
     ScanLine,
     UserCheck,
+    UserPlus,
     Users,
     UserX,
     Upload,
@@ -284,16 +285,13 @@ export default function Index({
                             like separate features rather than the same act at
                             scale.
 
-                            There is no "Add Employee" beside them any more.
-                            PrimePower does not hire into this system directly —
-                            Core 1 recruits and sends the hire over, and it is
-                            approved on the endorsements screen. Leaving a
-                            direct button here would have been a second way in
-                            that keeps no record of who accepted the person or
-                            why, which is the whole thing the handover exists to
-                            record. Import stays because digitising a workforce
-                            that already works here is not hiring: there is no
-                            endorsement for somebody on their sixth year. */}
+                            New Hires is the usual way in: Core 1 recruits and
+                            the hire is approved on the endorsements screen.
+                            Add Employee is the direct way, for hires that do
+                            not come through recruitment; its form requires a
+                            reason, which is recorded in the audit log in place
+                            of the endorsement. Import stays because digitising
+                            a workforce that already works here is not hiring. */}
                             {can.create && (
                                 <Button variant="outline" href="/hr/employees/import">
                                     <Upload className="h-4 w-4" />
@@ -305,6 +303,13 @@ export default function Index({
                                 <Button variant="outline" href="/hr/employees/documents/batch">
                                     <ScanLine className="h-4 w-4" />
                                     File Scans
+                                </Button>
+                            )}
+
+                            {can.create && (
+                                <Button variant="outline" href="/hr/employees/create">
+                                    <UserPlus className="h-4 w-4" />
+                                    Add Employee
                                 </Button>
                             )}
 

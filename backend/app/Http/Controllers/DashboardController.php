@@ -2,12 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AttendanceLog;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\LeaveRequest;
-use App\Models\OvertimeRequest;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
 use App\Models\PerformanceReview;
@@ -16,7 +14,6 @@ use App\Services\CredentialExpiryScanner;
 use App\Services\EmployeeService;
 use App\Services\LeaveService;
 use App\Services\PerformanceScorer;
-use App\Services\TimekeepingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -70,7 +67,6 @@ class DashboardController extends Controller
             'headcountByDepartment' => $this->headcountByDepartment(),
             'headcountTrend' => $this->headcountTrend($today),
             'statusMix' => $this->statusMix(),
-            'attendanceToday' => $this->attendanceToday($today),
             'leaveToday' => $this->leaveToday($today),
             'approvals' => $this->approvals($request),
             'payroll' => $canViewCompanyFigures ? $this->latestPayroll() : self::NO_PAYROLL,
@@ -162,40 +158,7 @@ class DashboardController extends Controller
                     'pay_frequency' => $employee->pay_frequency,
                 ] : null,
 
-                'attendance' => $this->ownAttendance($employee, $today),
             ],
-        ];
-    }
-
-    /**
-     * How the reader's own month is going: days in, days missed.
-     *
-     * Counted from `attendance_logs` in one grouped query rather than a row
-     * per day, and "came in" is `TimekeepingService::PRESENT_STATUSES` rather
-     * than a fourth private copy of that list — a day somebody was late for is
-     * still a day they were there, and four screens already agree on that.
-     *
-     * @return array{month: string, from: string, to: string, present: int, absent: int}
-     */
-    private function ownAttendance(Employee $employee, Carbon $today): array
-    {
-        $from = $today->copy()->startOfMonth();
-        $to = $today->copy()->endOfMonth();
-
-        $counts = AttendanceLog::query()
-            ->where('employee_id', $employee->id)
-            ->whereBetween('log_date', [$from->toDateString(), $to->toDateString()])
-            ->selectRaw('status, count(*) as total')
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        return [
-            'month' => $today->format('F Y'),
-            'from' => $from->toDateString(),
-            'to' => $to->toDateString(),
-            'present' => (int) collect(TimekeepingService::PRESENT_STATUSES)
-                ->sum(fn (string $status) => (int) ($counts[$status] ?? 0)),
-            'absent' => (int) ($counts[AttendanceLog::STATUS_ABSENT] ?? 0),
         ];
     }
 
@@ -492,31 +455,6 @@ class DashboardController extends Controller
         ];
     }
 
-    /** @return array<string, int> */
-    private function attendanceToday(Carbon $today): array
-    {
-        $logs = AttendanceLog::whereDate('log_date', $today)
-            ->selectRaw("sum(case when status in ('present','late','undertime') then 1 else 0 end) as present")
-            ->selectRaw('sum(case when late_minutes > 0 then 1 else 0 end) as late')
-            ->selectRaw("sum(case when status = 'absent' then 1 else 0 end) as absent")
-            ->first();
-
-        $present = (int) $logs->present;
-        $absent = (int) $logs->absent;
-
-        // "Expected" is whoever has a record for today; without one there is
-        // nothing to measure a rate against.
-        $expected = $present + $absent;
-
-        return [
-            'present' => $present,
-            'late' => (int) $logs->late,
-            'absent' => $absent,
-            'expected' => $expected,
-            'rate' => $expected > 0 ? (int) round($present / $expected * 100) : 0,
-        ];
-    }
-
     /** @return array<string, mixed> */
     private function leaveToday(Carbon $today): array
     {
@@ -539,9 +477,6 @@ class DashboardController extends Controller
     {
         return [
             'leave' => $this->leave->pendingApprovalsFor($request->user()),
-            'overtime' => $request->user()->isHrAdmin()
-                ? OvertimeRequest::where('status', OvertimeRequest::STATUS_PENDING)->count()
-                : 0,
             'reviews' => PerformanceReview::where('reviewer_id', $request->user()->id)
                 ->where('status', PerformanceReview::STATUS_DRAFT)
                 ->count(),

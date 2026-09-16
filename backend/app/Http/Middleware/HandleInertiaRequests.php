@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Services\CredentialExpiryScanner;
 use App\Services\EmployeeService;
 use App\Services\LeaveService;
+use App\Services\NotificationFeed;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -64,6 +65,12 @@ class HandleInertiaRequests extends Middleware
             // Lazily evaluated, so guests and API calls never run the query.
             'pendingApprovals' => fn () => $request->user()
                 ? app(LeaveService::class)->pendingApprovalsFor($request->user())
+                : 0,
+            // Everything waiting on this user to decide — leave, overtime, DTR
+            // corrections, new hires — for the bell's badge. The list behind
+            // it is fetched only when the bell is opened.
+            'notificationCount' => fn () => $request->user()
+                ? app(NotificationFeed::class)->count($request->user())
                 : 0,
             // Lapsed or soon-to-lapse 201 documents, scoped to what this user
             // may see — so an employee's own licence warns them directly.

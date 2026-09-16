@@ -1,65 +1,47 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import Login from '@/Pages/Auth/Login';
-import DynamicPageLoader from '@/Pages/DynamicPageLoader';
-import ErrorBoundary from '@/Components/ErrorBoundary';
+import '../css/app.css';
+import './bootstrap';
 
-function ProtectedRoute({ children }) {
-    const { user, loading } = useAuth();
+import { createInertiaApp, router } from '@inertiajs/react';
+import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import { createRoot } from 'react-dom/client';
+import { ThemeProvider } from '@/context/ThemeContext';
 
-    if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-background">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                    <p className="text-sm font-medium text-muted-foreground">Loading PrimePower HRIS...</p>
-                </div>
-            </div>
+const appName = import.meta.env.VITE_APP_NAME || 'PrimePower HRIS';
+
+/**
+ * An expired session lands on the login screen, not on a modal.
+ *
+ * The idle timeout signs people out from the page they are on, but it cannot
+ * cover the case it exists for: a tab left open on a machine that slept, whose
+ * session Laravel expired without anybody's browser running. The first click
+ * after that sends a CSRF token the server has forgotten, and Inertia's default
+ * for the 419 is a black overlay containing Laravel's "Page Expired" page —
+ * which is a dead end. There is no way forward from it and nothing on it says
+ * to sign in again.
+ *
+ * `invalid` fires for exactly this: a response Inertia cannot render.
+ */
+router.on('invalid', (event) => {
+    if (event.detail.response?.status === 419) {
+        event.preventDefault();
+
+        window.location.href = '/login';
+    }
+});
+
+createInertiaApp({
+    title: (title) => `${title} - ${appName}`,
+    resolve: (name) =>
+        resolvePageComponent(`./Pages/${name}.jsx`, import.meta.glob('./Pages/**/*.jsx')),
+    setup({ el, App, props }) {
+        const root = createRoot(el);
+
+        root.render(
+            <ThemeProvider>
+                <App {...props} />
+            </ThemeProvider>,
         );
-    }
-
-    if (!user) {
-        return <Navigate to="/login" replace />;
-    }
-
-    return children;
-}
-
-export default function App() {
-    const { user, loading } = useAuth();
-
-    if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-background">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                    <p className="text-sm font-medium text-muted-foreground">Loading...</p>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <ErrorBoundary>
-            <Routes>
-                <Route
-                    path="/login"
-                    element={user ? <Navigate to="/dashboard" replace /> : <Login />}
-                />
-                <Route
-                    path="/"
-                    element={<Navigate to={user ? '/dashboard' : '/login'} replace />}
-                />
-                <Route
-                    path="/*"
-                    element={
-                        <ProtectedRoute>
-                            <DynamicPageLoader />
-                        </ProtectedRoute>
-                    }
-                />
-            </Routes>
-        </ErrorBoundary>
-    );
-}
+    },
+    // No top loading bar between pages, at the owner's request.
+    progress: false,
+});

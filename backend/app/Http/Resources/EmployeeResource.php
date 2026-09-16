@@ -2,11 +2,27 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class EmployeeResource extends JsonResource
 {
+    /**
+     * Whether the government numbers, bank account and licence number go out
+     * as their last four characters. The web screens mask; the full values
+     * reach a browser only through `hr.employees.reveal`, which logs who asked.
+     * The edit form and the API still need the real values.
+     */
+    private bool $masked = false;
+
+    public function masked(bool $masked = true): static
+    {
+        $this->masked = $masked;
+
+        return $this;
+    }
+
     public function toArray(Request $request): array
     {
         $viewer = $request->user();
@@ -41,14 +57,14 @@ class EmployeeResource extends JsonResource
 
             // Government IDs and pay are restricted to HR and the employee.
             $this->mergeWhen($canSeeSensitive, fn () => [
-                'sss_number' => $this->sss_number,
-                'philhealth_number' => $this->philhealth_number,
-                'pagibig_number' => $this->pagibig_number,
-                'tin' => $this->tin,
+                'sss_number' => $this->shown('sss_number'),
+                'philhealth_number' => $this->shown('philhealth_number'),
+                'pagibig_number' => $this->shown('pagibig_number'),
+                'tin' => $this->shown('tin'),
                 'basic_salary' => $this->basic_salary,
                 'pay_frequency' => $this->pay_frequency,
                 'bank_name' => $this->bank_name,
-                'bank_account_number' => $this->bank_account_number,
+                'bank_account_number' => $this->shown('bank_account_number'),
             ]),
 
             'employment_category' => $this->employment_category,
@@ -83,7 +99,8 @@ class EmployeeResource extends JsonResource
             'date_separated' => $this->date_separated?->toDateString(),
             'separation_reason' => $this->separation_reason,
 
-            'drivers_license_number' => $this->drivers_license_number,
+            'drivers_license_number' => $this->shown('drivers_license_number'),
+            'numbers_masked' => $this->masked,
             'license_dl_codes' => $this->license_dl_codes,
             'license_conditions' => $this->license_conditions,
             'license_expiry' => $this->license_expiry?->toDateString(),
@@ -157,5 +174,12 @@ class EmployeeResource extends JsonResource
             'updated_at' => $this->updated_at?->toIso8601String(),
             'deleted_at' => $this->deleted_at?->toIso8601String(),
         ];
+    }
+
+    private function shown(string $field): ?string
+    {
+        $value = $this->resource->{$field};
+
+        return $this->masked ? Employee::mask($value) : $value;
     }
 }

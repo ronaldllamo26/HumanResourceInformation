@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { KeyRound, Plus, ShieldCheck, UserX } from 'lucide-react';
+import { ClipboardCheck, KeyRound, Plus, ShieldCheck, UserX } from 'lucide-react';
 import SettingsLayout from '@/Layouts/SettingsLayout';
 import {
     Badge,
@@ -20,9 +20,15 @@ import {
     Table,
     TableEmpty,
 } from '@/Components/ui';
-import { initials } from '@/lib/utils';
+import { formatDate, initials } from '@/lib/utils';
 
-export default function Users({ users, roles, unlinkedEmployees }) {
+export default function Users({
+    users,
+    roles,
+    unlinkedEmployees,
+    accessReview = null,
+    staleAfterDays = 90,
+}) {
     const [createOpen, setCreateOpen] = useState(false);
     const [pending, setPending] = useState(null); // { user, action }
 
@@ -88,6 +94,54 @@ export default function Users({ users, roles, unlinkedEmployees }) {
                 </CardBody>
             </Card>
 
+            {accessReview && (
+                <Card>
+                    <CardHeader
+                        title="Access Review"
+                        description={`Every ${staleAfterDays} days, confirm that everybody below should still have their access — especially Administrators and HR Staff.`}
+                        action={
+                            <Button
+                                variant="outline"
+                                onClick={() =>
+                                    router.post(
+                                        route('settings.users.review'),
+                                        {},
+                                        { preserveScroll: true },
+                                    )
+                                }
+                            >
+                                <ClipboardCheck className="h-4 w-4" />
+                                Record review
+                            </Button>
+                        }
+                    />
+                    <CardBody className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                        <span className="text-muted-foreground">
+                            {accessReview.at ? (
+                                <>
+                                    Last reviewed{' '}
+                                    <span className="font-medium text-foreground">
+                                        {formatDate(accessReview.at)}
+                                    </span>{' '}
+                                    by {accessReview.by ?? 'unknown'}
+                                </>
+                            ) : (
+                                'Never reviewed'
+                            )}
+                        </span>
+                        {accessReview.due && <Badge variant="warning">Review due</Badge>}
+                        <span className="text-muted-foreground">
+                            {
+                                users.filter((user) => user.is_privileged && user.is_active)
+                                    .length
+                            }{' '}
+                            with full access · {users.filter((user) => user.is_stale).length}{' '}
+                            unused for {staleAfterDays}+ days
+                        </span>
+                    </CardBody>
+                </Card>
+            )}
+
             <Card>
                 <CardHeader
                     title="Accounts"
@@ -107,6 +161,7 @@ export default function Users({ users, roles, unlinkedEmployees }) {
                             <TH>Role</TH>
                             <TH>201 File</TH>
                             <TH className="text-right">Tokens</TH>
+                            <TH>Last Sign-in</TH>
                             <TH>Status</TH>
                             <TH className="text-right">Actions</TH>
                         </TR>
@@ -114,7 +169,7 @@ export default function Users({ users, roles, unlinkedEmployees }) {
 
                     <TBody>
                         {users.length === 0 ? (
-                            <TableEmpty colSpan={6} title="No accounts" />
+                            <TableEmpty colSpan={7} title="No accounts" />
                         ) : (
                             users.map((user) => (
                                 <TR key={user.id}>
@@ -174,6 +229,17 @@ export default function Users({ users, roles, unlinkedEmployees }) {
 
                                     <TD className="text-right text-sm tabular-nums text-muted-foreground">
                                         {user.tokens || '—'}
+                                    </TD>
+
+                                    <TD className="whitespace-nowrap text-sm text-muted-foreground">
+                                        {user.last_sign_in_at
+                                            ? formatDate(user.last_sign_in_at)
+                                            : 'Never'}
+                                        {user.is_stale && (
+                                            <Badge variant="warning" className="ml-2">
+                                                Unused
+                                            </Badge>
+                                        )}
                                     </TD>
 
                                     <TD>

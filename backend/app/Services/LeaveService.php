@@ -23,7 +23,7 @@ class LeaveService
 {
     public function __construct(
         private readonly EmployeeService $employees,
-        private readonly TimekeepingService $timekeeping,
+        private readonly WorkCalendar $calendar,
     ) {}
 
     public function scopedQuery(User $user): Builder
@@ -39,8 +39,13 @@ class LeaveService
     }
 
     /**
-     * Working days in the range: rest days and holidays do not consume credits.
-     * A half day is always 0.5 and must sit on a single date.
+     * Working days in the range: holidays and the employee's own rest days do
+     * not consume credits. A half day is always 0.5 and must sit on a single
+     * date.
+     *
+     * The calendar is Time & Attendance's (`WorkCalendar`), so leave, the DTR
+     * and payroll agree about which Tuesday was a working day. Somebody with
+     * no shift assigned rests on Saturday and Sunday.
      */
     public function workingDays(Employee $employee, Carbon $start, Carbon $end, bool $isHalfDay = false): float
     {
@@ -51,15 +56,9 @@ class LeaveService
         $days = 0.0;
 
         for ($date = $start->copy(); $date->lessThanOrEqualTo($end); $date->addDay()) {
-            if ($this->timekeeping->isHoliday($date)) {
-                continue;
+            if ($this->calendar->isWorkingDay($employee, $date)) {
+                $days++;
             }
-
-            if ($this->timekeeping->isRestDay($employee, $date)) {
-                continue;
-            }
-
-            $days++;
         }
 
         return $days;
@@ -177,6 +176,28 @@ class LeaveService
      * before that change are approved through here too, which is why the
      * status is not gone from the model.
      */
+    /**
+     * Why approving this request would overdraw the balance, or null if it
+     * would not. Unpaid leave never touches credits, so it never falls short.
+     */
+    public function creditShortfall(LeaveRequest $request): ?string
+    {
+        $type = $request->leaveType;
+
+        if (! $type?->is_paid) {
+            return null;
+        }
+
+        $available = $this->balanceFor($request->employee, $type, $request->start_date->year)->available();
+        $requested = (float) $request->days_requested;
+
+        if ($requested <= $available) {
+            return null;
+        }
+
+        return "Cannot approve: only {$available} day(s) of {$type->name} remain, and this request needs {$requested}.";
+    }
+
     public function approve(LeaveRequest $request, User $approver, ?string $remarks = null): LeaveRequest
     {
         return DB::transaction(function () use ($request, $approver, $remarks) {

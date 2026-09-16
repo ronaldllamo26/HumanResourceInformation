@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DriverResource;
-use App\Models\AttendanceLog;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\PayrollPeriod;
@@ -13,7 +12,6 @@ use App\Services\DeploymentReadinessChecker;
 use App\Services\EmployeeService;
 use App\Services\LeaveService;
 use App\Services\PayrollService;
-use App\Services\TimekeepingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -47,7 +45,6 @@ class IntegrationController extends Controller
     public function __construct(
         private readonly EmployeeService $employees,
         private readonly DeploymentReadinessChecker $readiness,
-        private readonly TimekeepingService $timekeeping,
         private readonly LeaveService $leave,
         private readonly PayrollService $payroll,
     ) {}
@@ -617,11 +614,6 @@ class IntegrationController extends Controller
         $from = Carbon::parse($request->query('from', now()->startOfMonth()->toDateString()));
         $to = Carbon::parse($request->query('to', now()->endOfMonth()->toDateString()));
 
-        $attendance = $this->timekeeping->summary(
-            AttendanceLog::whereIn('employee_id', (clone $scoped)->select('employees.id'))
-                ->whereBetween('log_date', [$from->toDateString(), $to->toDateString()]),
-        );
-
         return response()->json([
             'data' => [
                 'headcount' => $this->employees->statistics(clone $scoped),
@@ -636,8 +628,6 @@ class IntegrationController extends Controller
                     ->selectRaw('clients.name, count(*) as total')
                     ->groupBy('clients.name')
                     ->pluck('total', 'name'),
-
-                'attendance' => $attendance,
 
                 'leave' => $this->leave->summary(
                     LeaveRequest::whereIn(

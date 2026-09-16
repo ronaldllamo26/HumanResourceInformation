@@ -33,6 +33,7 @@ import {
     Textarea,
 } from '@/Components/ui';
 import { formatCurrency, formatDate, initials } from '@/lib/utils';
+import AnomalyPanel from './Partials/AnomalyPanel';
 import ReadinessPanel from './Partials/ReadinessPanel';
 
 const titleCase = (value) =>
@@ -40,7 +41,7 @@ const titleCase = (value) =>
         .replace(/[_-]/g, ' ')
         .replace(/\b\w/g, (character) => character.toUpperCase());
 
-export default function Run({ run, payslips, readiness, breakdown, filters, can }) {
+export default function Run({ run, payslips, readiness, anomalies, breakdown, filters, can }) {
     const [action, setAction] = useState(null); // 'approve' | 'cancel'
 
     const form = useForm({ remarks: '' });
@@ -190,6 +191,7 @@ export default function Run({ run, payslips, readiness, breakdown, filters, can 
             </div>
 
             <ReadinessPanel readiness={readiness} />
+            <AnomalyPanel anomalies={anomalies} />
 
             <Card className="mb-5">
                 <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">

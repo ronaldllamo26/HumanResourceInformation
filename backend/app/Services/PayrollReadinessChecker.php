@@ -2,28 +2,32 @@
 
 namespace App\Services;
 
+use App\Models\AttendanceCutoff;
 use App\Models\AttendanceLog;
+use App\Models\Client;
+use App\Models\ClientTimesheet;
 use App\Models\DisciplinaryAction;
 use App\Models\Employee;
 use App\Models\OvertimeRequest;
 use App\Models\PayrollPeriod;
+use App\Models\TimeCorrection;
 use Illuminate\Support\Collection;
 
 /**
- * Module 2 → Module 4 — is the DTR clean enough to pay from?
+ * What someone should look at before a payroll is computed.
  *
- * PayrollService::gatherInputs() reads attendance without judging it, so a
- * forgotten time-out quietly understates an employee's hours and a pending
- * overtime request quietly pays nothing. Both are silent: the run computes,
- * the totals look plausible, and the error only surfaces when someone opens
- * their payslip. This runs the same checks *before* the money is computed.
+ * `PayrollService::gatherInputs()` reads attendance without judging it, so a
+ * forgotten time-out quietly pays nothing for that day and a pending overtime
+ * request quietly pays no overtime. This is where those are said out loud,
+ * before the money is computed: incomplete punches, undecided overtime and
+ * corrections, nobody's DTR at all, an open cutoff, a client that has not
+ * confirmed its timesheet — plus the two that do not depend on attendance,
+ * pay under the regional wage floor and unpaid suspensions.
  *
  * Severity is a workflow decision, not a data one:
  *
- *  - blocker — paying from this would be wrong (a day with no time-out has
- *    no hours behind it). HR should fix the DTR first.
- *  - warning — payable, but someone should have decided already (a pending
- *    overtime request pays zero unless approved before the run).
+ *  - blocker — paying from this would be wrong.
+ *  - warning — payable, but someone should have decided already.
  *
  * Nothing here hard-stops a run. HR may have a reason, and a payroll that
  * cannot be run is worse than one that warns loudly — but the decision is
@@ -34,10 +38,6 @@ class PayrollReadinessChecker
     public const SEVERITY_BLOCKER = 'blocker';
 
     public const SEVERITY_WARNING = 'warning';
-
-    public function __construct(
-        private readonly AttendanceExceptionScanner $scanner,
-    ) {}
 
     /**
      * @return array{
@@ -50,9 +50,13 @@ class PayrollReadinessChecker
     public function check(PayrollPeriod $period): array
     {
         $checks = collect([
-            $this->missingTimeOuts($period),
+            $this->incompletePunches($period),
+            $this->disputedTimesheets($period),
+            $this->pendingCorrections($period),
             $this->pendingOvertime($period),
-            $this->employeesWithoutAttendance($period),
+            $this->missingRecords($period),
+            $this->unconfirmedTimesheets($period),
+            $this->openCutoff($period),
             $this->ratesBelowRegionalMinimum(),
             $this->unservedSuspensions($period),
         ])->filter()->values();
@@ -68,116 +72,223 @@ class PayrollReadinessChecker
     }
 
     /**
-     * Days clocked in but never out. The calculator has no end time to work
-     * from, so the hours behind that day's pay are missing, not merely low.
+     * Days clocked in with no time-out. The calculator computes nothing from
+     * them, so the day pays as if it was never worked — a blocker, because the
+     * payslip would be wrong in the employee's disfavour.
      *
      * @return array<string, mixed>|null
      */
-    private function missingTimeOuts(PayrollPeriod $period): ?array
+    private function incompletePunches(PayrollPeriod $period): ?array
     {
-        $exceptions = $this->scanner
-            ->scan(AttendanceLog::query()->filter([
-                'from' => $period->start_date->toDateString(),
-                'to' => $period->end_date->toDateString(),
-            ]))
-            ->where('type', AttendanceExceptionScanner::TYPE_MISSING_PUNCH);
+        $logs = AttendanceLog::query()
+            ->between($period->start_date->toDateString(), $period->end_date->toDateString())
+            ->where('status', AttendanceLog::STATUS_INCOMPLETE)
+            ->with('employee:id,first_name,middle_name,last_name,suffix')
+            ->get();
 
-        if ($exceptions->isEmpty()) {
+        if ($logs->isEmpty()) {
             return null;
         }
 
         return $this->entry(
-            'missing_time_outs',
+            'incomplete_punches',
             self::SEVERITY_BLOCKER,
-            'Incomplete time records',
-            "{$exceptions->count()} day(s) have a time-in with no time-out. Hours worked for those days are understated.",
-            'Review in Timekeeping → Exceptions',
-            '/hr/timekeeping/exceptions?type='.AttendanceExceptionScanner::TYPE_MISSING_PUNCH
-                .'&from='.$period->start_date->toDateString()
-                .'&to='.$period->end_date->toDateString(),
-            $this->names($exceptions->pluck('employee_name')),
+            $logs->count().' day(s) with no time-out',
+            'These days have a time-in and no time-out, so nothing was computed for them and they would pay as not worked. '
+                .'Complete the record or approve the employee\'s correction first.',
+            'Open time records',
+            '/hr/timekeeping?status=incomplete&from='.$period->start_date->toDateString().'&to='.$period->end_date->toDateString(),
+            $this->names($logs->map(fn (AttendanceLog $log) => $log->employee?->full_name)),
         );
     }
 
     /**
-     * Overtime filed but not yet decided. Only approved overtime is paid, so
-     * these pay nothing — which is correct only if that was deliberate.
+     * A client disputing its timesheet does not agree the work was done as
+     * recorded — which is what both this payroll and their bill rest on.
      *
      * @return array<string, mixed>|null
      */
-    private function pendingOvertime(PayrollPeriod $period): ?array
+    private function disputedTimesheets(PayrollPeriod $period): ?array
     {
-        $pending = OvertimeRequest::with('employee:id,first_name,middle_name,last_name,suffix')
-            ->where('status', OvertimeRequest::STATUS_PENDING)
-            ->whereBetween('date', [
-                $period->start_date->toDateString(),
-                $period->end_date->toDateString(),
-            ])
+        $disputed = ClientTimesheet::query()
+            ->where('payroll_period_id', $period->id)
+            ->where('status', ClientTimesheet::STATUS_DISPUTED)
+            ->with('client:id,name')
+            ->get();
+
+        if ($disputed->isEmpty()) {
+            return null;
+        }
+
+        return $this->entry(
+            'disputed_timesheets',
+            self::SEVERITY_BLOCKER,
+            $disputed->count().' client timesheet(s) disputed',
+            'The client did not confirm the attendance of the staff deployed to them. Correct the records and prepare the timesheet again before paying from it.',
+            'Open client timesheets',
+            '/hr/timekeeping/client-timesheets?period='.$period->id,
+            $this->names($disputed->map(fn (ClientTimesheet $sheet) => $sheet->client?->name)),
+        );
+    }
+
+    /** @return array<string, mixed>|null */
+    private function pendingCorrections(PayrollPeriod $period): ?array
+    {
+        $pending = TimeCorrection::query()
+            ->where('status', TimeCorrection::STATUS_PENDING)
+            ->whereDate('work_date', '>=', $period->start_date->toDateString())
+            ->whereDate('work_date', '<=', $period->end_date->toDateString())
+            ->with('employee:id,first_name,middle_name,last_name,suffix')
             ->get();
 
         if ($pending->isEmpty()) {
             return null;
         }
 
-        $hours = round((float) $pending->sum('hours'), 2);
+        return $this->entry(
+            'pending_corrections',
+            self::SEVERITY_WARNING,
+            $pending->count().' time correction(s) not yet decided',
+            'An employee says these days were recorded wrong. Until someone decides, payroll pays each day as it is recorded now.',
+            'Review corrections',
+            '/hr/timekeeping/corrections?status=pending',
+            $this->names($pending->map(fn (TimeCorrection $correction) => $correction->employee?->full_name)),
+        );
+    }
+
+    /** @return array<string, mixed>|null */
+    private function pendingOvertime(PayrollPeriod $period): ?array
+    {
+        $pending = OvertimeRequest::query()
+            ->where('status', OvertimeRequest::STATUS_PENDING)
+            ->whereDate('work_date', '>=', $period->start_date->toDateString())
+            ->whereDate('work_date', '<=', $period->end_date->toDateString())
+            ->with('employee:id,first_name,middle_name,last_name,suffix')
+            ->get();
+
+        if ($pending->isEmpty()) {
+            return null;
+        }
 
         return $this->entry(
             'pending_overtime',
             self::SEVERITY_WARNING,
-            'Undecided overtime',
-            "{$pending->count()} overtime request(s) totalling {$hours}h are still pending. Only approved overtime is paid, so these will compute as zero.",
-            'Decide in Timekeeping → Overtime',
-            '/hr/timekeeping/overtime?status='.OvertimeRequest::STATUS_PENDING,
+            $pending->count().' overtime request(s) not yet decided',
+            'Only approved overtime is paid, so these '.(float) $pending->sum('hours').' hour(s) would pay nothing if the run is computed now.',
+            'Review overtime',
+            '/hr/timekeeping/overtime?status=pending',
             $this->names($pending->map(fn (OvertimeRequest $request) => $request->employee?->full_name)),
         );
     }
 
     /**
-     * Active, salaried employees with no DTR at all for the period. They are
-     * still paid their basic salary, so this is silent by design — the person
-     * may have been hired mid-period, or their biometrics may never have
-     * imported.
+     * Employees on this payroll with no time record at all in the cutoff.
+     * Nothing says they were absent, so nothing is deducted — which may be
+     * right, and should be checked.
      *
      * @return array<string, mixed>|null
      */
-    private function employeesWithoutAttendance(PayrollPeriod $period): ?array
+    private function missingRecords(PayrollPeriod $period): ?array
     {
+        if ($period->start_date->isFuture()) {
+            return null;
+        }
+
+        $recorded = AttendanceLog::query()
+            ->between($period->start_date->toDateString(), $period->end_date->toDateString())
+            ->distinct()
+            ->pluck('employee_id');
+
         $missing = Employee::query()
             ->where('status', '!=', 'inactive')
             ->where('basic_salary', '>', 0)
-            ->whereNotExists(function ($query) use ($period) {
-                $query->selectRaw(1)
-                    ->from('attendance_logs')
-                    ->whereColumn('attendance_logs.employee_id', 'employees.id')
-                    ->whereBetween('attendance_logs.log_date', [
-                        $period->start_date->toDateString(),
-                        $period->end_date->toDateString(),
-                    ]);
-            })
-            ->get(['id', 'first_name', 'middle_name', 'last_name', 'suffix']);
+            ->whereNotIn('id', $recorded)
+            ->get();
 
         if ($missing->isEmpty()) {
             return null;
         }
 
         return $this->entry(
-            'no_attendance',
+            'missing_records',
             self::SEVERITY_WARNING,
-            'No time records for the period',
-            "{$missing->count()} employee(s) have no DTR in this period. They will be paid their basic salary with no attendance behind it.",
-            'Review in Timekeeping → Daily Records',
-            '/hr/timekeeping?from='.$period->start_date->toDateString()
-                .'&to='.$period->end_date->toDateString(),
+            $missing->count().' employee(s) with no time records',
+            'Nobody recorded a single day for them in this cutoff, so they would be paid in full with no lateness or absence deducted.',
+            'Open time records',
+            '/hr/timekeeping?from='.$period->start_date->toDateString().'&to='.$period->end_date->toDateString(),
             $this->names($missing->map(fn (Employee $employee) => $employee->full_name)),
         );
     }
 
     /**
-     * A handful of names, so the panel says who without becoming a report.
+     * Clients with staff deployed to them whose timesheet for this period has
+     * not been confirmed. Their attendance is still only our word.
      *
-     * @param  Collection<int, string|null>  $names
-     * @return array<int, string>
+     * @return array<string, mixed>|null
      */
+    private function unconfirmedTimesheets(PayrollPeriod $period): ?array
+    {
+        $answered = ClientTimesheet::query()
+            ->where('payroll_period_id', $period->id)
+            ->whereIn('status', [ClientTimesheet::STATUS_CONFIRMED, ClientTimesheet::STATUS_DISPUTED])
+            ->pluck('client_id');
+
+        $deployedTo = Employee::query()
+            ->where('employment_category', 'external')
+            ->where('status', '!=', 'inactive')
+            ->whereNotNull('client_id')
+            ->distinct()
+            ->pluck('client_id');
+
+        $clients = Client::query()
+            ->whereIn('id', $deployedTo)
+            ->whereNotIn('id', $answered)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        if ($clients->isEmpty()) {
+            return null;
+        }
+
+        return $this->entry(
+            'unconfirmed_timesheets',
+            self::SEVERITY_WARNING,
+            $clients->count().' client timesheet(s) not confirmed',
+            'These clients have not confirmed the attendance of the staff deployed to them for this period.',
+            'Open client timesheets',
+            '/hr/timekeeping/client-timesheets?period='.$period->id,
+            $this->names($clients->pluck('name')),
+        );
+    }
+
+    /**
+     * The cutoff is still open, so records inside it can change after the run
+     * is computed — and the run would not know.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function openCutoff(PayrollPeriod $period): ?array
+    {
+        $closed = AttendanceCutoff::query()
+            ->where('payroll_period_id', $period->id)
+            ->where('status', AttendanceCutoff::STATUS_CLOSED)
+            ->exists();
+
+        if ($closed) {
+            return null;
+        }
+
+        return $this->entry(
+            'cutoff_open',
+            self::SEVERITY_WARNING,
+            'Attendance cutoff is still open',
+            'Time records for this period can still change after payroll is computed. Close the cutoff once the records are checked.',
+            'Open cutoffs',
+            '/hr/timekeeping/cutoffs',
+            [],
+        );
+    }
+
     /**
      * Daily rates sitting under the wage floor of the region the employee
      * actually works in.
@@ -240,19 +351,16 @@ class PayrollReadinessChecker
     }
 
     /**
-     * Unpaid suspensions covering days of this cutoff that the DTR does not
-     * account for.
+     * Unpaid suspensions covering days of this cutoff.
      *
-     * **This check is the whole of how a Core 4 suspension reaches pay, and the
-     * design decision it rests on is worth stating.** The shorter build was to
-     * let Core 4 post a suspension and have this system mark those days absent.
-     * That was rejected: a DTR another system can write is not a record of
-     * anything — the same argument that keeps employees out of
-     * `attendance_logs`, where they file a correction and somebody decides.
-     * Core 4 is another system and is no more entitled to it than an employee.
-     *
-     * So the suspension is a stated fact and this is the report. HR keys the
-     * days or decides not to, and either way a person decided.
+     * **This check is the whole of how a Core 4 suspension reaches pay.** Core 4
+     * posts a suspension; this system does not dock pay on another system's
+     * say-so. The suspension is a stated fact and this is the report — HR
+     * records the days or decides not to, and either way a person decided.
+     * It goes silent for a suspension once the DTR already explains its
+     * days — every suspended day recorded absent, on leave, a rest day or a
+     * holiday — since a line that is already done is how a panel stops being
+     * read.
      *
      * **A warning, never a blocker**, for the same reason the wage-floor check
      * is one: the discrepancy is often legitimate. A suspension served over a
@@ -283,35 +391,26 @@ class PayrollReadinessChecker
             return null;
         }
 
-        /*
-         * What the DTR already accounts for, per employee: days marked absent
-         * or on leave inside the cutoff.
-         *
-         * Counted once for everybody rather than per action — a per-employee
-         * query here would be one round trip per suspension on a screen that
-         * loads before every payroll run.
-         */
-        $accountedFor = AttendanceLog::query()
+        // Days the DTR already shows the person did not work, one query for all.
+        $explained = AttendanceLog::query()
             ->whereIn('employee_id', $actions->pluck('employee_id')->unique())
-            ->whereBetween('log_date', [$from->toDateString(), $to->toDateString()])
-            ->whereIn('status', [
-                AttendanceLog::STATUS_ABSENT,
-                AttendanceLog::STATUS_ON_LEAVE,
-            ])
-            ->selectRaw('employee_id, count(*) as days')
-            ->groupBy('employee_id')
-            ->pluck('days', 'employee_id');
+            ->between($from->toDateString(), $to->toDateString())
+            ->whereIn('status', [AttendanceLog::STATUS_ABSENT, AttendanceLog::STATUS_ON_LEAVE, AttendanceLog::STATUS_REST_DAY, AttendanceLog::STATUS_HOLIDAY])
+            ->get(['employee_id', 'work_date'])
+            ->map(fn (AttendanceLog $log) => $log->employee_id.'|'.$log->work_date->toDateString())
+            ->flip();
 
-        /*
-         * Only the ones where the suspension is longer than what the DTR
-         * explains. An employee whose four suspended days are already four
-         * absences needs no attention, and listing them would put a line on
-         * this panel that is already done — which is how a panel stops being
-         * read.
-         */
-        $unaccounted = $actions->filter(function (DisciplinaryAction $action) use ($from, $to, $accountedFor) {
-            return $action->daysWithin($from, $to)
-                > (int) ($accountedFor[$action->employee_id] ?? 0);
+        $unaccounted = $actions->filter(function (DisciplinaryAction $action) use ($from, $to, $explained) {
+            $start = $action->effective_from->greaterThan($from) ? $action->effective_from->copy() : $from->copy();
+            $end = $action->effective_to === null || $action->effective_to->greaterThan($to) ? $to->copy() : $action->effective_to->copy();
+
+            for ($date = $start; $date->lessThanOrEqualTo($end); $date->addDay()) {
+                if (! $explained->has($action->employee_id.'|'.$date->toDateString())) {
+                    return true;
+                }
+            }
+
+            return false;
         });
 
         if ($unaccounted->isEmpty()) {
@@ -323,13 +422,13 @@ class PayrollReadinessChecker
         return $this->entry(
             'unserved_suspensions',
             self::SEVERITY_WARNING,
-            'Unpaid suspensions not reflected in the DTR',
+            'Unpaid suspensions in this cutoff',
             $unaccounted->count().' employee(s) are on unpaid suspension covering '.$days
-                .' day(s) of this cutoff, and their attendance does not account for it. '
-                .'This system does not dock pay on another system\'s say-so — key the days on '
-                .'the DTR if the suspension was served, or leave it if it was lifted.',
-            'Open Period DTR',
-            '/hr/timekeeping/period',
+                .' day(s) of this cutoff. '
+                .'This system does not dock pay on another system\'s say-so — record the days as '
+                .'unpaid leave or a deduction if the suspension was served, or leave it if it was lifted.',
+            'Open employees',
+            '/hr/employees',
             $this->names($unaccounted->map(fn (DisciplinaryAction $a) => $a->employee?->full_name)),
         );
     }

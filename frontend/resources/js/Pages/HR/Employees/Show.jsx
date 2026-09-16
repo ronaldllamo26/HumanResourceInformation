@@ -1,14 +1,14 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
     ArrowLeft,
     CalendarDays,
     CheckCircle2,
     ChevronRight,
-    Clock,
     Download,
     Eye,
+    EyeOff,
     FileText,
     History,
     Loader2,
@@ -79,6 +79,80 @@ function DetailRow({ label, value, className }) {
         <div className={cn('min-w-0', className)}>
             <dt className="text-xs text-muted-foreground">{label}</dt>
             <dd className="mt-0.5 break-words text-sm text-foreground">{value || '—'}</dd>
+        </div>
+    );
+}
+
+/** How long a revealed number stays on screen before it hides itself again. */
+const REVEAL_SECONDS = 30;
+
+/**
+ * A government number, bank account or licence number, hidden to its last
+ * four characters until somebody presses Show.
+ *
+ * The page never holds the full value: Show asks the server for this one
+ * field, the server logs who asked, and the number hides itself again after
+ * thirty seconds — a screen left open on a desk should not stay open on
+ * somebody's TIN.
+ */
+function SensitiveRow({ label, value, field, employeeId }) {
+    const [revealed, setRevealed] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (revealed === null) return undefined;
+
+        const timer = setTimeout(() => setRevealed(null), REVEAL_SECONDS * 1000);
+
+        return () => clearTimeout(timer);
+    }, [revealed]);
+
+    const reveal = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const { data } = await axios.post(route('hr.employees.reveal', employeeId), {
+                field,
+            });
+            setRevealed(data.value ?? '');
+        } catch (exception) {
+            setError(
+                exception.response?.status === 429
+                    ? 'Too many requests — wait a minute.'
+                    : 'Could not show this number.',
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="mt-0.5 flex min-w-0 items-center gap-2 text-sm text-foreground">
+                <span className="break-all font-mono">{revealed ?? (value || '—')}</span>
+                {value && (
+                    <button
+                        type="button"
+                        onClick={revealed === null ? reveal : () => setRevealed(null)}
+                        disabled={loading}
+                        className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60"
+                        aria-label={`${revealed === null ? 'Show' : 'Hide'} ${label}`}
+                    >
+                        {loading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : revealed === null ? (
+                            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                        ) : (
+                            <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        {revealed === null ? 'Show' : 'Hide'}
+                    </button>
+                )}
+            </dd>
+            {error && <p className="mt-0.5 text-xs text-destructive">{error}</p>}
         </div>
     );
 }
@@ -578,27 +652,7 @@ export default function Show({
                             : 'Employee Records & Activities'
                     }
                 />
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Link
-                        href={`/hr/timekeeping/employee/${record.id}`}
-                        className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
-                    >
-                        <div className="flex items-start justify-between">
-                            <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                                <Clock className="h-5 w-5" />
-                            </span>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                        </div>
-                        <div className="mt-3">
-                            <h3 className="text-sm font-semibold text-foreground group-hover:text-primary">
-                                {isSelf ? 'My Attendance & DTR' : 'Attendance & DTR'}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                Daily attendance logs, punch-ins & cutoffs.
-                            </p>
-                        </div>
-                    </Link>
-
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <Link
                         href="/hr/leave"
                         className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-all hover:border-info/50 hover:shadow-sm"
@@ -728,17 +782,34 @@ export default function Show({
                         <Card>
                             <CardHeader
                                 title="Government IDs"
-                                description="Visible to HR and the employee only."
+                                description="Visible to HR and the employee only. Hidden until Show is pressed, and every Show is recorded."
                             />
                             <CardBody>
                                 <dl className="grid gap-4 sm:grid-cols-2">
-                                    <DetailRow label="SSS" value={record.sss_number} />
-                                    <DetailRow
-                                        label="PhilHealth"
-                                        value={record.philhealth_number}
+                                    <SensitiveRow
+                                        label="SSS"
+                                        field="sss_number"
+                                        value={record.sss_number}
+                                        employeeId={record.id}
                                     />
-                                    <DetailRow label="Pag-IBIG" value={record.pagibig_number} />
-                                    <DetailRow label="TIN" value={record.tin} />
+                                    <SensitiveRow
+                                        label="PhilHealth"
+                                        field="philhealth_number"
+                                        value={record.philhealth_number}
+                                        employeeId={record.id}
+                                    />
+                                    <SensitiveRow
+                                        label="Pag-IBIG"
+                                        field="pagibig_number"
+                                        value={record.pagibig_number}
+                                        employeeId={record.id}
+                                    />
+                                    <SensitiveRow
+                                        label="TIN"
+                                        field="tin"
+                                        value={record.tin}
+                                        employeeId={record.id}
+                                    />
                                 </dl>
                             </CardBody>
                         </Card>
@@ -804,9 +875,11 @@ export default function Show({
                                         value={titleCase(record.pay_frequency)}
                                     />
                                     <DetailRow label="Bank" value={record.bank_name} />
-                                    <DetailRow
+                                    <SensitiveRow
                                         label="Account Number"
+                                        field="bank_account_number"
                                         value={record.bank_account_number}
+                                        employeeId={record.id}
                                     />
                                 </dl>
                             </CardBody>
@@ -820,9 +893,11 @@ export default function Show({
                         />
                         <CardBody className="space-y-4">
                             <dl className="grid gap-4 sm:grid-cols-2">
-                                <DetailRow
+                                <SensitiveRow
                                     label="License Number"
+                                    field="drivers_license_number"
                                     value={record.drivers_license_number}
+                                    employeeId={record.id}
                                 />
                                 <DetailRow
                                     label="Expiry"

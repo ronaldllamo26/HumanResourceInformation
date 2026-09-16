@@ -3,38 +3,47 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/** A working pattern: when a day starts and ends, the break, and the grace for lateness. */
 class Shift extends Model
 {
-    use Auditable, HasFactory;
+    use Auditable;
 
     protected $guarded = ['id'];
 
-    public function schedules(): HasMany
+    public function assignments(): HasMany
     {
-        return $this->hasMany(EmployeeSchedule::class);
+        return $this->hasMany(EmployeeShift::class);
     }
 
-    public function attendanceLogs(): HasMany
-    {
-        return $this->hasMany(AttendanceLog::class);
-    }
-
-    /** A shift whose end time is at or before its start time runs past midnight. */
+    /** A night shift that ends the next morning, e.g. 22:00–06:00. */
     public function crossesMidnight(): bool
     {
-        return $this->end_time <= $this->start_time;
+        return substr((string) $this->end_time, 0, 5) <= substr((string) $this->start_time, 0, 5);
+    }
+
+    /** Scheduled minutes on the job, break excluded. */
+    public function scheduledMinutes(): int
+    {
+        [$sh, $sm] = array_map('intval', explode(':', (string) $this->start_time));
+        [$eh, $em] = array_map('intval', explode(':', (string) $this->end_time));
+
+        $minutes = ($eh * 60 + $em) - ($sh * 60 + $sm);
+
+        if ($minutes <= 0) {
+            $minutes += 24 * 60;
+        }
+
+        return max(0, $minutes - (int) $this->break_minutes);
     }
 
     protected function casts(): array
     {
         return [
             'break_minutes' => 'integer',
-            'grace_period_minutes' => 'integer',
-            'is_night_shift' => 'boolean',
+            'grace_minutes' => 'integer',
             'is_active' => 'boolean',
         ];
     }

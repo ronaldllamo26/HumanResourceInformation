@@ -5,10 +5,8 @@ import {
     CalendarDays,
     ChevronRight,
     ClipboardCheck,
-    Clock,
     IdCard,
     Shield,
-    UserCheck,
     UserPlus,
     Users,
     Wallet,
@@ -42,26 +40,6 @@ function trendDelta(series) {
     if (!Array.isArray(series) || series.length < 2) return null;
 
     return (Number(series.at(-1).value) || 0) - (Number(series[0].value) || 0);
-}
-
-/**
- * Where a percentage sits on the good -> bad ramp.
- *
- * Presentational only — these cut-offs colour a bar, they do not decide
- * anything. The rules that carry consequences (chronic lateness, absence
- * trends) live in config/timekeeping.php and are deliberately not restated
- * here, so nobody can mistake a shade for a threshold.
- */
-function gradeForPercent(percent) {
-    const value = Number(percent) || 0;
-
-    if (value >= 95) return 'grade-1';
-    if (value >= 90) return 'grade-2';
-    if (value >= 80) return 'grade-3';
-    if (value >= 70) return 'grade-4';
-    if (value >= 50) return 'grade-5';
-
-    return 'grade-6';
 }
 
 /**
@@ -233,7 +211,6 @@ export default function Dashboard({
     headcountTrend,
     statusMix,
     recentHires,
-    attendanceToday,
     approvals,
     payroll,
     leaveToday,
@@ -266,7 +243,7 @@ export default function Dashboard({
             <ProfileCard profile={profile} />
 
             {/* Headline figures */}
-            <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-5 grid gap-5 sm:grid-cols-3">
                 {/* Each tile links to the screen its figure came from, so a
                     number that raises a question is one click from its
                     answer. */}
@@ -288,15 +265,7 @@ export default function Dashboard({
                               }
                     }
                 />
-                <StatCard
-                    floating
-                    href="/hr/timekeeping"
-                    label="Present Today"
-                    value={attendanceToday.present}
-                    icon={UserCheck}
-                    tone="success"
-                    hint={`of ${attendanceToday.expected} scheduled`}
-                />
+
                 {/* Being on approved leave is not a fault, so this stays
                     informational rather than a warning. */}
                 <StatCard
@@ -327,32 +296,7 @@ export default function Dashboard({
             </div>
 
             {/* Operational detail */}
-            <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                <SplitStatCard
-                    floating
-                    href="/hr/timekeeping"
-                    label="Today's Attendance"
-                    icon={Clock}
-                    tone="success"
-                    stats={[
-                        { label: 'Present', value: attendanceToday.present, tone: 'success' },
-                        { label: 'Late', value: attendanceToday.late, tone: 'warning' },
-                        { label: 'Absent', value: attendanceToday.absent, tone: 'destructive' },
-                    ]}
-                />
-
-                <MeterCard
-                    floating
-                    href="/hr/timekeeping/reports"
-                    label="Attendance Rate"
-                    value={`${attendanceToday.rate}%`}
-                    percent={attendanceToday.rate}
-                    icon={UserCheck}
-                    iconTone="success"
-                    tone={gradeForPercent(attendanceToday.rate)}
-                    hint={`${attendanceToday.present} of ${attendanceToday.expected} on duty`}
-                />
-
+            <div className="mb-5 grid gap-5 sm:grid-cols-2">
                 {/* The bar takes the band's own colour, so the meter and the
                     badge cannot disagree about how the score reads. */}
                 <MeterCard
@@ -382,7 +326,6 @@ export default function Dashboard({
                     tone="warning"
                     stats={[
                         { label: 'Leave', value: approvals.leave, tone: 'warning' },
-                        { label: 'Overtime', value: approvals.overtime, tone: 'warning' },
                         { label: 'Reviews', value: approvals.reviews, tone: 'warning' },
                     ]}
                 />
@@ -753,11 +696,7 @@ function ProfileCard({ profile }) {
     const links = employee
         ? [
               { label: 'My 201 File', href: `/hr/employees/${employee.id}`, icon: IdCard },
-              {
-                  label: 'My Attendance',
-                  href: `/hr/timekeeping/employee/${employee.id}`,
-                  icon: Clock,
-              },
+
               { label: 'My Leave', href: '/hr/leave', icon: CalendarDays },
               { label: 'My Payslips', href: '/hr/payroll/payslips', icon: Wallet },
           ]
@@ -848,27 +787,11 @@ function ProfileCard({ profile }) {
                                     icon={Wallet}
                                 />
                             )}
-
-                            {/* Both halves of the month, because "18 days in"
-                                and "2 days missed" are different questions and
-                                the second is the one somebody acts on. */}
-                            <ProfileFact
-                                label={`Days In · ${employee.attendance.month}`}
-                                value={`${employee.attendance.present} day(s)`}
-                                href={`/hr/timekeeping/employee/${employee.id}?from=${employee.attendance.from}&to=${employee.attendance.to}`}
-                                icon={Clock}
-                            />
-                            <ProfileFact
-                                label="Absences This Month"
-                                value={`${employee.attendance.absent} day(s)`}
-                                href={`/hr/timekeeping/employee/${employee.id}?from=${employee.attendance.from}&to=${employee.attendance.to}`}
-                                icon={CalendarClock}
-                            />
                         </dl>
                     </>
                 )}
 
-                <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-2 border-t border-border pt-4 sm:grid-cols-3">
                     {links.map(({ label, href, icon: Icon }) => (
                         <Link
                             key={href}

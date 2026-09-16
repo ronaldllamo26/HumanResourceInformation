@@ -7,7 +7,6 @@ use App\Http\Controllers\Api\EndorsementController;
 use App\Http\Controllers\Api\IntegrationController;
 use App\Http\Controllers\Api\LoanController;
 use App\Http\Controllers\Api\PayrollAdjustmentController;
-use App\Http\Controllers\Api\TimekeepingController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -154,11 +153,5 @@ Route::prefix('v1')->group(function () {
         Route::get('loans/{reference}', [LoanController::class, 'show']);
         Route::get('employees/{employee}/loans', [LoanController::class, 'forEmployee']);
 
-        // --- Module 2: Timekeeping & Attendance ---
-        Route::get('attendance/summary', [TimekeepingController::class, 'summary']);
-        Route::get('attendance', [TimekeepingController::class, 'index']);
-        Route::post('attendance', [TimekeepingController::class, 'store']);
-        Route::get('attendance/{attendanceLog}', [TimekeepingController::class, 'show']);
-        Route::delete('attendance/{attendanceLog}', [TimekeepingController::class, 'destroy']);
     });
 });

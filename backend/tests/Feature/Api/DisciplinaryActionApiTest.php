@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Api;
 
-use App\Models\AttendanceLog;
 use App\Models\DisciplinaryAction;
 use App\Models\Employee;
 use App\Models\PayrollPeriod;
@@ -16,17 +15,10 @@ use Tests\TestCase;
  * Disciplinary actions from Core 4, and the one thing they deliberately do not
  * do.
  *
- * **The tests that carry the design are the two named `does_not`.** The shorter
- * build was to let Core 4 post a suspension and have this system mark those
- * days absent; it was rejected because **a DTR another system can write is not
- * a record of anything** — the same argument that keeps employees out of
- * `attendance_logs`, where they file a correction and somebody decides.
- *
- * So a suspension is a stated fact, `PayrollReadinessChecker` reports it, and
- * HR decides. The gap that leaves — an unpaid suspension nobody acts on is
- * paid — is the accepted price, and
- * `test_a_suspension_does_not_write_attendance_records` is what stops somebody
- * "fixing" it later without reading this.
+ * A suspension is a stated fact: this system does not dock pay on another
+ * system's say-so. `PayrollReadinessChecker` reports it and HR decides. The
+ * gap that leaves — an unpaid suspension nobody acts on is paid — is the
+ * accepted price.
  */
 class DisciplinaryActionApiTest extends TestCase
 {
@@ -35,22 +27,6 @@ class DisciplinaryActionApiTest extends TestCase
     private ?int $employeeId = null;
 
     // --- What it refuses to do ---------------------------------------------
-
-    /**
-     * A suspension arriving over the wire writes **no attendance record**.
-     *
-     * If this ever starts failing, somebody has made Core 4 able to write this
-     * system's DTR — and a time record another system can rewrite proves
-     * nothing at cut-off.
-     */
-    public function test_a_suspension_does_not_write_attendance_records(): void
-    {
-        Sanctum::actingAs(User::factory()->hrStaff()->create());
-
-        $this->postJson('/api/v1/disciplinary-actions', $this->payload())->assertCreated();
-
-        $this->assertSame(0, AttendanceLog::count(), 'Core 4 wrote into the DTR.');
-    }
 
     /** And it says so in the response, rather than leaving it to be assumed. */
     public function test_the_response_states_that_no_pay_was_docked(): void
@@ -129,47 +105,6 @@ class DisciplinaryActionApiTest extends TestCase
         $this->assertSame(0, app(PayrollReadinessChecker::class)->check($period)['blockers']);
     }
 
-    /**
-     * Once HR has keyed the days, the line goes away.
-     *
-     * A panel that keeps reporting work already done is a panel that stops
-     * being read — the same reason a complete 201 file is not a finding on
-     * `OnboardingChecker`.
-     */
-    public function test_a_suspension_already_keyed_on_the_dtr_is_not_reported(): void
-    {
-        $period = $this->period();
-        $employee = Employee::factory()->create();
-
-        $from = $period->start_date->copy()->addDay();
-
-        DisciplinaryAction::create([
-            'employee_id' => $employee->id,
-            'source' => 'core4',
-            'reference' => 'SAF-9003',
-            'type' => DisciplinaryAction::TYPE_SUSPENSION,
-            'reason' => 'Unsafe driving.',
-            'effective_from' => $from->toDateString(),
-            'effective_to' => $from->copy()->addDays(2)->toDateString(),
-            'is_unpaid' => true,
-        ]);
-
-        // HR keyed all three days as absent.
-        foreach (range(0, 2) as $offset) {
-            AttendanceLog::create([
-                'employee_id' => $employee->id,
-                'log_date' => $from->copy()->addDays($offset)->toDateString(),
-                'status' => AttendanceLog::STATUS_ABSENT,
-            ]);
-        }
-
-        $check = collect(app(PayrollReadinessChecker::class)->check($period)['checks'])
-            ->firstWhere('key', 'unserved_suspensions');
-
-        $this->assertNull($check, 'A suspension HR has already keyed was reported again.');
-    }
-
-    /** A suspension *with* pay changes nothing about a payslip, so it is silent. */
     public function test_a_paid_suspension_is_not_raised(): void
     {
         $period = $this->period();

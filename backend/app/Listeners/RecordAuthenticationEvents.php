@@ -82,11 +82,19 @@ class RecordAuthenticationEvents
         // and null when the address is unknown. Both are worth keeping, and
         // they are different findings: one is a user who mistyped, the other
         // is someone guessing at addresses.
+        $attempted = $this->attemptedLogin($event->credentials);
+
+        // Fortify's custom sign-in check (the one that refuses deactivated
+        // accounts) fires this event without the user even when the account
+        // exists, so the account is looked up from what was typed instead.
+        $subjectId = $event->user?->getAuthIdentifier()
+            ?? ($attempted === null ? null : User::where('username', $attempted)->value('id'));
+
         $this->write(
             self::EVENT_FAILED,
             actorId: null,
-            subjectId: $event->user?->getAuthIdentifier(),
-            attempted: $this->attemptedEmail($event->credentials),
+            subjectId: $subjectId,
+            attempted: $attempted,
         );
     }
 
@@ -96,21 +104,22 @@ class RecordAuthenticationEvents
             self::EVENT_LOCKOUT,
             actorId: null,
             subjectId: null,
-            attempted: $this->attemptedEmail($event->request->only(['email', 'username'])),
+            attempted: $this->attemptedLogin($event->request->only(['username', 'email'])),
         );
     }
 
     /**
      * What was typed into the sign-in box.
      *
-     * The web form sends an `email`; read both email and username so a failed
-     * attempt is recorded against whatever was entered.
+     * The web form sends a `username` now; the API's token login still sends
+     * an `email`. Read both, so a failed attempt is recorded against whatever
+     * the person actually typed rather than silently against nothing.
      *
      * @param  array<string, mixed>  $credentials
      */
-    private function attemptedEmail(array $credentials): ?string
+    private function attemptedLogin(array $credentials): ?string
     {
-        $typed = $credentials['email'] ?? $credentials['username'] ?? null;
+        $typed = $credentials['username'] ?? $credentials['email'] ?? null;
 
         return is_string($typed) ? mb_substr($typed, 0, 255) : null;
     }
@@ -125,12 +134,9 @@ class RecordAuthenticationEvents
             'auditable_id' => $subjectId,
             'event' => $event,
             'old_values' => null,
-            // Only ever the address that was typed — never the password, and
+            // Only ever the username that was typed — never the password, and
             // never the rest of the credential array.
-            'new_values' => $attempted === null ? null : [
-                'email' => $attempted,
-                'username' => $attempted,
-            ],
+            'new_values' => $attempted === null ? null : ['username' => $attempted],
             'ip_address' => $request?->ip(),
             'user_agent' => $request?->userAgent(),
         ]);

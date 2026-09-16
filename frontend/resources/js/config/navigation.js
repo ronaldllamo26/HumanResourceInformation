@@ -5,21 +5,22 @@ import {
     Briefcase,
     Building2,
     CalendarDays,
+    CalendarCheck,
     CalendarRange,
     ClipboardList,
     Clock,
+    FilePenLine,
     Database,
     DoorOpen,
     FileText,
     FileWarning,
-    Gauge,
     HandCoins,
     Handshake,
-    History,
     IdCard,
     Inbox,
     LayoutDashboard,
     ListChecks,
+    Lock,
     Palette,
     Plug,
     Receipt,
@@ -29,8 +30,8 @@ import {
     ShieldAlert,
     ShieldCheck,
     Target,
+    Timer,
     TrendingUp,
-    TriangleAlert,
     User,
     Users,
     Wallet,
@@ -236,90 +237,52 @@ export const NAV_GROUPS = [
         items: [
             {
                 id: 'timekeeping',
-                label: 'Timekeeping & Attendance',
+                label: 'Timekeeping',
                 icon: Clock,
                 children: [
-                    /*
-                     * "Records", not "Daily Records": the screen is one row
-                     * per employee for a cutoff now, and the days sit under
-                     * the person rather than being the list. It absorbed the
-                     * Reports entry that used to sit further down, which
-                     * showed the same figures with no way into them.
-                     */
                     {
-                        id: 'tk-daily',
-                        label: 'Records',
-                        icon: ListChecks,
+                        id: 'timekeeping-records',
+                        label: 'Daily Time Records',
+                        icon: ClipboardList,
                         href: '/hr/timekeeping',
                     },
-                    /*
-                     * Beside Records, because the pair is enter-then-read:
-                     * a cutoff is encoded here and counted there, off the
-                     * same table.
-                     */
                     {
-                        id: 'tk-period',
-                        label: 'Period DTR',
-                        icon: ClipboardList,
-                        href: '/hr/timekeeping/period',
+                        id: 'timekeeping-shifts',
+                        label: 'Shifts & Rest Days',
+                        icon: CalendarRange,
+                        href: '/hr/timekeeping/shifts',
                         roles: ['admin', 'hr_staff'],
                     },
                     {
-                        id: 'tk-overtime',
-                        label: 'Overtime',
-                        icon: Clock,
-                        href: '/hr/timekeeping/overtime',
-                    },
-                    /*
-                     * An employee cannot edit a time record and never should
-                     * be able to, so a discrepancy on their DTR is raised
-                     * here and decided before it changes anything. No `roles`:
-                     * the people who file these are the people the queue is
-                     * for.
-                     */
-                    {
-                        id: 'tk-adjustments',
-                        label: 'DTR Corrections',
-                        icon: FileWarning,
-                        href: '/hr/timekeeping/adjustments',
-                    },
-                    {
-                        id: 'tk-schedules',
-                        label: 'Shifts & Schedules',
-                        icon: CalendarRange,
-                        href: '/hr/timekeeping/schedules',
-                    },
-                    {
-                        id: 'tk-holidays',
-                        label: 'Holidays',
-                        icon: CalendarDays,
+                        id: 'timekeeping-holidays',
+                        label: 'Holiday Calendar',
+                        icon: CalendarCheck,
                         href: '/hr/timekeeping/holidays',
                     },
                     {
-                        /*
-                         * The automated DTR checker, back beside the records
-                         * it reads. `AttendanceExceptionScanner` is a
-                         * config-driven rule engine over `attendance_logs`
-                         * plus the leave cross-check — no model, and its
-                         * thresholds live in `config/timekeeping.php`.
-                         *
-                         * "Exceptions" rather than "Attendance Exceptions":
-                         * the longer name was earned by sitting in a group
-                         * that mixed modules, where the word alone said
-                         * nothing about which records. Inside Timekeeping its
-                         * siblings are Records, Overtime and Holidays, and the
-                         * subject is not in question.
-                         */
-                        id: 'tk-exceptions',
-                        label: 'Exceptions',
-                        icon: TriangleAlert,
-                        href: '/hr/timekeeping/exceptions',
+                        id: 'timekeeping-overtime',
+                        label: 'Overtime Requests',
+                        icon: Timer,
+                        href: '/hr/timekeeping/overtime',
                     },
                     {
-                        id: 'tk-history',
-                        label: 'History',
-                        icon: History,
-                        href: '/hr/timekeeping/history',
+                        id: 'timekeeping-corrections',
+                        label: 'Time Corrections',
+                        icon: FilePenLine,
+                        href: '/hr/timekeeping/corrections',
+                    },
+                    {
+                        id: 'timekeeping-cutoffs',
+                        label: 'Cutoff Closing',
+                        icon: Lock,
+                        href: '/hr/timekeeping/cutoffs',
+                        roles: ['admin', 'hr_staff'],
+                    },
+                    {
+                        id: 'timekeeping-client-timesheets',
+                        label: 'Client Timesheets',
+                        icon: Handshake,
+                        href: '/hr/timekeeping/client-timesheets',
                         roles: ['admin', 'hr_staff'],
                     },
                 ],
@@ -460,13 +423,6 @@ export const NAV_GROUPS = [
                 label: 'Workforce Analytics',
                 icon: TrendingUp,
                 href: '/hr/analytics/workforce',
-                roles: ['admin', 'hr_staff'],
-            },
-            {
-                id: 'analytics-attendance',
-                label: 'Attendance & Cost Insights',
-                icon: Gauge,
-                href: '/hr/analytics/attendance',
                 roles: ['admin', 'hr_staff'],
             },
             {

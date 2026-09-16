@@ -2,12 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\AttendanceLog;
 use App\Models\Employee;
 use App\Models\EmployeeAllowance;
 use App\Models\EmployeeLoan;
 use App\Models\LeaveRequest;
-use App\Models\OvertimeRequest;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
@@ -31,6 +29,7 @@ class PayrollService
         private readonly EmployeeService $employees,
         private readonly SalaryAdjustmentService $salaries,
         private readonly LeaveService $leave,
+        private readonly TimekeepingService $timekeeping,
     ) {}
 
     /** Payslips the viewer may see — employees see only their own. */
@@ -144,7 +143,15 @@ class PayrollService
     }
 
     /**
-     * The inputs for one employee's payslip, drawn from Modules 2 and 3.
+     * The inputs for one employee's payslip.
+     *
+     * Time & Attendance was removed pending a redesign, so nothing
+     * attendance-derived reaches the calculator: no days worked, lateness,
+     * undertime, unexcused absence, overtime, night differential or holiday
+     * premium. Everyone is paid their basic salary for the period, less approved
+     * unpaid leave, plus allowances, less loans and adjustments. The calculator
+     * still accepts those inputs, so the new submodules only have to supply
+     * them here again.
      *
      * @return array<string, mixed>
      */
@@ -153,31 +160,27 @@ class PayrollService
         $from = $period->start_date;
         $to = $period->end_date;
 
-        $attendance = AttendanceLog::where('employee_id', $employee->id)
-            ->whereBetween('log_date', [$from->toDateString(), $to->toDateString()])
-            ->selectRaw('coalesce(sum(hours_worked), 0) as hours')
-            ->selectRaw('coalesce(sum(late_minutes), 0) as late')
-            ->selectRaw('coalesce(sum(undertime_minutes), 0) as undertime')
-            ->selectRaw('coalesce(sum(night_diff_minutes), 0) as night_diff')
-            ->selectRaw("coalesce(sum(case when status in ('present','late','undertime') then 1 else 0 end), 0) as days_worked")
-            ->first();
+        // The rate in force over the period being paid, not the rate the
+        // employee is on today: a raise keyed in after the fact must not
+        // rewrite a period that closed before it took effect.
+        $monthlySalary = $this->salaries->rateAsOf($employee, $to);
+
+        // Time & Attendance's totals: absences already exclude days an
+        // approved leave covers, and overtime is approved requests only.
+        $attendance = $this->timekeeping->summaryFor($employee, $from, $to);
 
         return [
-            // The rate in force over the period being paid, not the rate the
-            // employee is on today: a raise keyed in after the fact must not
-            // rewrite a period that closed before it took effect.
-            'monthly_salary' => $this->salaries->rateAsOf($employee, $to),
+            'monthly_salary' => $monthlySalary,
             'pay_frequency' => $period->frequency,
 
-            'days_worked' => (float) $attendance->days_worked,
-            'hours_worked' => round((float) $attendance->hours, 2),
-            // Raw time past the shift is recorded by attendance, but only
-            // *approved* overtime is paid.
-            'overtime_hours' => $this->approvedOvertimeHours($employee, $from, $to),
-            'night_diff_hours' => round(((float) $attendance->night_diff) / 60, 2),
-            'late_minutes' => (int) $attendance->late,
-            'undertime_minutes' => (int) $attendance->undertime,
-            'absent_days' => $this->unexcusedAbsentDays($employee, $from, $to),
+            'days_worked' => (float) $attendance['days_worked'],
+            'hours_worked' => round($attendance['minutes_worked'] / 60, 2),
+            'overtime_hours' => (float) $attendance['overtime_hours'],
+            'night_diff_hours' => round($attendance['night_diff_minutes'] / 60, 2),
+            'late_minutes' => (int) $attendance['late_minutes'],
+            'undertime_minutes' => (int) $attendance['undertime_minutes'],
+            'absent_days' => (float) $attendance['absent_days'],
+            'holiday_pay' => $this->holidayPremium($monthlySalary, $attendance),
             'unpaid_leave_days' => $this->unpaidLeaveDays($employee, $from, $to),
 
             'allowances' => $this->allowances($employee, $period),
@@ -199,54 +202,22 @@ class PayrollService
     }
 
     /**
-     * Absent days with no approved leave behind them — the days that are
-     * genuinely unpaid because nobody authorised them.
+     * The Labor Code premium for work on a holiday, on top of the day the
+     * monthly salary already pays: +100% of the hourly rate on a regular
+     * holiday (×2.0 in all), +30% on a special non-working day (×1.3).
      *
-     * This used to be a plain count of DTR rows marked `absent`, and it was
-     * wrong in both directions at once:
-     *
-     * - **Approved unpaid leave was deducted twice.** The day counted here as
-     *   an absence *and* again in `unpaid_leave_days`, so a week of authorised
-     *   leave without pay cost the employee two weeks of salary.
-     * - **Approved paid leave was deducted at all.** A VL day is already
-     *   inside the basic salary — that is what "paid leave" means — so taking
-     *   it off again docked somebody for leave they were entitled to.
-     *
-     * Both were invisible from the payslip, which shows "Absences" and
-     * "Unpaid leave" as separate lines that each looked individually correct.
-     *
-     * Whether a day is covered is asked of LeaveService rather than derived
-     * here, so payroll, the exception scanner and the DTR screen cannot come
-     * to different conclusions about the same Tuesday.
+     * @param  array<string, float|int>  $attendance
      */
-    public function unexcusedAbsentDays(Employee $employee, Carbon $from, Carbon $to): float
+    public function holidayPremium(float $monthlySalary, array $attendance): float
     {
-        $absentDates = AttendanceLog::query()
-            ->where('employee_id', $employee->id)
-            ->whereBetween('log_date', [$from->toDateString(), $to->toDateString()])
-            ->where('status', AttendanceLog::STATUS_ABSENT)
-            ->pluck('log_date');
+        $hourly = $this->calculator->rates($monthlySalary)['hourly'];
+        $premiums = config('payroll.premiums');
 
-        if ($absentDates->isEmpty()) {
-            return 0.0;
-        }
-
-        $covered = $this->leave->approvedLeaveDates([$employee->id], $from, $to);
-
-        return (float) $absentDates
-            ->reject(fn ($date) => $covered->has(
-                $employee->id.'|'.Carbon::parse($date)->toDateString(),
-            ))
-            ->count();
-    }
-
-    /** Approved overtime hours falling inside the period. */
-    public function approvedOvertimeHours(Employee $employee, Carbon $from, Carbon $to): float
-    {
-        return round((float) OvertimeRequest::where('employee_id', $employee->id)
-            ->where('status', OvertimeRequest::STATUS_APPROVED)
-            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
-            ->sum('hours'), 2);
+        return round(
+            $hourly * ($premiums['regular_holiday'] - 1) * (float) ($attendance['regular_holiday_hours'] ?? 0)
+            + $hourly * ($premiums['special_holiday'] - 1) * (float) ($attendance['special_holiday_hours'] ?? 0),
+            2,
+        );
     }
 
     /**

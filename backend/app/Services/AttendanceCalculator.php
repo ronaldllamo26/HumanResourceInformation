@@ -7,44 +7,47 @@ use App\Models\Shift;
 use Illuminate\Support\Carbon;
 
 /**
- * Derives a day's attendance figures from raw punches and the assigned shift.
+ * Turns one day's punches and shift into the figures payroll pays from.
  *
- * Kept separate from TimekeepingService because Payroll depends on these numbers
- * being correct and reproducible — this class touches no database and is unit
- * tested in isolation.
+ * No database: payroll multiplies these numbers by money, so every rule is
+ * unit tested in isolation. The rules are the Labor Code's and the company's:
+ *
+ *  - Arriving inside the shift's grace minutes is not late; past it, lateness
+ *    counts from the scheduled start, not from the end of the grace.
+ *  - Leaving before the scheduled end is undertime; staying past it is raw
+ *    overtime — whether it is *paid* is an approved overtime request's call.
+ *  - Night differential is every minute worked between 22:00 and 06:00.
+ *  - A shift ending at or before it starts (22:00–06:00) ends the next day.
  */
 class AttendanceCalculator
 {
-    /** Night differential window under the Philippine Labor Code. */
     private const NIGHT_START_HOUR = 22;
 
     private const NIGHT_END_HOUR = 6;
 
+    private const MEAL_PERIOD_AFTER_MINUTES = 300;
+
     /**
-     * @return array{
-     *     status: string, hours_worked: float, late_minutes: int,
-     *     undertime_minutes: int, overtime_minutes: int, night_diff_minutes: int
-     * }
+     * @return array{status: string, minutes_worked: int, late_minutes: int,
+     *     undertime_minutes: int, overtime_minutes: int, night_diff_minutes: int}
      */
     public function compute(
         Carbon $date,
         ?Shift $shift,
         ?Carbon $timeIn,
         ?Carbon $timeOut,
-        ?Carbon $breakOut = null,
-        ?Carbon $breakIn = null,
         bool $isRestDay = false,
         bool $isHoliday = false,
     ): array {
         $blank = [
-            'hours_worked' => 0.0,
+            'minutes_worked' => 0,
             'late_minutes' => 0,
             'undertime_minutes' => 0,
             'overtime_minutes' => 0,
             'night_diff_minutes' => 0,
         ];
 
-        // No time-in means nothing was worked; the day is classified by context.
+        // Nothing punched: the day is named by what kind of day it was.
         if (! $timeIn) {
             return [...$blank, 'status' => match (true) {
                 $isHoliday => AttendanceLog::STATUS_HOLIDAY,
@@ -53,55 +56,65 @@ class AttendanceCalculator
             }];
         }
 
-        // Still clocked in — record the punch but derive nothing from it yet.
+        // In but not out: record it, compute nothing, and let payroll see it.
         if (! $timeOut) {
-            return [...$blank, 'status' => AttendanceLog::STATUS_PRESENT];
+            return [...$blank, 'status' => AttendanceLog::STATUS_INCOMPLETE];
         }
 
-        $shiftStart = $shift ? $this->anchor($date, $shift->start_time) : null;
-        $shiftEnd = $shift ? $this->shiftEnd($date, $shift) : null;
+        // A time-out earlier than the time-in means the shift ran past midnight.
+        if ($timeOut->lessThanOrEqualTo($timeIn)) {
+            $timeOut = $timeOut->copy()->addDay();
+        }
 
-        $breakMinutes = $this->breakMinutes($shift, $breakOut, $breakIn);
-        $workedMinutes = max(0, $timeIn->diffInMinutes($timeOut) - $breakMinutes);
+        $breakMinutes = (int) ($shift?->break_minutes ?? 0);
+        $spanMinutes = (int) $timeIn->diffInMinutes($timeOut);
+        // The break only comes off a day long enough to have had one: the
+        // Labor Code puts the meal period within the first five hours.
+        $worked = $spanMinutes > self::MEAL_PERIOD_AFTER_MINUTES ? $spanMinutes - $breakMinutes : $spanMinutes;
 
         $late = 0;
         $undertime = 0;
         $overtime = 0;
 
-        if ($shiftStart && $shiftEnd) {
-            // Arriving inside the grace period is forgiven entirely; past it,
-            // lateness is counted from the scheduled start.
-            $graceCutoff = $shiftStart->copy()->addMinutes($shift->grace_period_minutes ?? 0);
-            if ($timeIn->greaterThan($graceCutoff)) {
-                $late = $shiftStart->diffInMinutes($timeIn);
+        if ($shift && ! $isRestDay && ! $isHoliday) {
+            $start = $this->at($date, $shift->start_time);
+            $end = $this->shiftEnd($date, $shift);
+
+            if ($timeIn->greaterThan($start->copy()->addMinutes((int) $shift->grace_minutes))) {
+                $late = (int) $start->diffInMinutes($timeIn);
             }
 
-            if ($timeOut->lessThan($shiftEnd)) {
-                $undertime = $timeOut->diffInMinutes($shiftEnd);
+            if ($timeOut->lessThan($end)) {
+                $undertime = (int) $timeOut->diffInMinutes($end);
+            } elseif ($timeOut->greaterThan($end)) {
+                $overtime = (int) $end->diffInMinutes($timeOut);
             }
-
-            if ($timeOut->greaterThan($shiftEnd)) {
-                // Raw time beyond the shift. Whether it is *paid* depends on an
-                // approved OvertimeRequest — that gate lives in Payroll.
-                $overtime = $shiftEnd->diffInMinutes($timeOut);
-            }
+        } elseif ($isRestDay || $isHoliday) {
+            // Every minute on a rest day or holiday is outside the schedule.
+            $overtime = $worked;
         }
 
         return [
-            'status' => $this->status($late, $undertime, $isRestDay, $isHoliday),
-            'hours_worked' => round($workedMinutes / 60, 2),
-            'late_minutes' => (int) $late,
-            'undertime_minutes' => (int) $undertime,
-            'overtime_minutes' => (int) $overtime,
+            'status' => match (true) {
+                $isHoliday => AttendanceLog::STATUS_HOLIDAY,
+                $isRestDay => AttendanceLog::STATUS_REST_DAY,
+                $late > 0 => AttendanceLog::STATUS_LATE,
+                $undertime > 0 => AttendanceLog::STATUS_UNDERTIME,
+                default => AttendanceLog::STATUS_PRESENT,
+            },
+            'minutes_worked' => max(0, $worked),
+            'late_minutes' => $late,
+            'undertime_minutes' => $undertime,
+            'overtime_minutes' => $overtime,
             'night_diff_minutes' => $this->nightDifferentialMinutes($timeIn, $timeOut),
         ];
     }
 
     /**
-     * Minutes of the worked period that fall inside 22:00–06:00.
+     * Minutes of a worked span that fall between 22:00 and 06:00.
      *
-     * Windows are built per calendar day and never overlap, so summing them
-     * cannot double count a shift that spans several nights.
+     * Built one night at a time, and the nights never overlap, so a span
+     * crossing several of them cannot be counted twice.
      */
     public function nightDifferentialMinutes(Carbon $start, Carbon $end): int
     {
@@ -111,58 +124,36 @@ class AttendanceCalculator
 
         $minutes = 0;
         $cursor = $start->copy()->subDay()->startOfDay();
-        $limit = $end->copy()->addDay()->startOfDay();
+        $limit = $end->copy()->startOfDay();
 
         while ($cursor->lessThanOrEqualTo($limit)) {
             $windowStart = $cursor->copy()->setTime(self::NIGHT_START_HOUR, 0);
             $windowEnd = $cursor->copy()->addDay()->setTime(self::NIGHT_END_HOUR, 0);
 
-            $overlapStart = $start->greaterThan($windowStart) ? $start : $windowStart;
-            $overlapEnd = $end->lessThan($windowEnd) ? $end : $windowEnd;
+            $from = $start->greaterThan($windowStart) ? $start : $windowStart;
+            $to = $end->lessThan($windowEnd) ? $end : $windowEnd;
 
-            if ($overlapEnd->greaterThan($overlapStart)) {
-                $minutes += $overlapStart->diffInMinutes($overlapEnd);
+            if ($to->greaterThan($from)) {
+                $minutes += (int) $from->diffInMinutes($to);
             }
 
             $cursor->addDay();
         }
 
-        return (int) $minutes;
+        return $minutes;
     }
 
-    /** Resolves the shift's end, pushing it to the next day when it wraps midnight. */
     public function shiftEnd(Carbon $date, Shift $shift): Carbon
     {
-        $end = $this->anchor($date, $shift->end_time);
+        $end = $this->at($date, $shift->end_time);
 
         return $shift->crossesMidnight() ? $end->addDay() : $end;
     }
 
-    private function anchor(Carbon $date, string $time): Carbon
+    private function at(Carbon $date, string $time): Carbon
     {
-        [$hour, $minute] = array_pad(explode(':', $time), 2, '0');
+        [$hour, $minute] = array_pad(array_map('intval', explode(':', $time)), 2, 0);
 
-        return $date->copy()->setTime((int) $hour, (int) $minute, 0);
-    }
-
-    /** Actual break when both punches exist, otherwise the shift's allowance. */
-    private function breakMinutes(?Shift $shift, ?Carbon $breakOut, ?Carbon $breakIn): int
-    {
-        if ($breakOut && $breakIn && $breakIn->greaterThan($breakOut)) {
-            return (int) $breakOut->diffInMinutes($breakIn);
-        }
-
-        return (int) ($shift->break_minutes ?? 0);
-    }
-
-    private function status(int $late, int $undertime, bool $isRestDay, bool $isHoliday): string
-    {
-        return match (true) {
-            $isHoliday => AttendanceLog::STATUS_HOLIDAY,
-            $isRestDay => AttendanceLog::STATUS_REST_DAY,
-            $late > 0 => AttendanceLog::STATUS_LATE,
-            $undertime > 0 => AttendanceLog::STATUS_UNDERTIME,
-            default => AttendanceLog::STATUS_PRESENT,
-        };
+        return $date->copy()->startOfDay()->setTime($hour, $minute);
     }
 }

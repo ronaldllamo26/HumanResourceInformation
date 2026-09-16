@@ -2,30 +2,24 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
+/** A day off by proclamation, and which Labor Code premium it carries. */
 class Holiday extends Model
 {
-    use HasFactory;
+    use Auditable;
 
     public const TYPE_REGULAR = 'regular';
 
-    public const TYPE_SPECIAL = 'special_non_working';
+    public const TYPE_SPECIAL = 'special';
+
+    public const TYPES = [self::TYPE_REGULAR, self::TYPE_SPECIAL];
 
     protected $guarded = ['id'];
 
-    /** Premium multiplier applied to holiday work (Philippine Labor Code). */
-    public function payMultiplier(): float
-    {
-        return $this->type === self::TYPE_REGULAR ? 2.0 : 1.3;
-    }
-
     protected function casts(): array
     {
-        return [
-            'date' => 'date',
-            'is_nationwide' => 'boolean',
-        ];
+        return ['date' => 'date'];
     }
 }

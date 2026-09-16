@@ -45,9 +45,18 @@ class PayrollRunPolicy
             && $run->processed_by !== $user->id;
     }
 
+    /**
+     * Confirming the money went out — never by the person who computed the run.
+     *
+     * Approval already excluded the processor; marking paid did not, so the
+     * one person who chose every figure could also be the one who says the
+     * transfer matched them. Three hands now: compute, approve, confirm.
+     */
     public function markPaid(User $user, PayrollRun $run): bool
     {
-        return $user->isHrAdmin() && $run->status === PayrollRun::STATUS_APPROVED;
+        return $user->isHrAdmin()
+            && $run->status === PayrollRun::STATUS_APPROVED
+            && $run->processed_by !== $user->id;
     }
 
     public function cancel(User $user, PayrollRun $run): bool

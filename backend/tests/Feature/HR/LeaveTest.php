@@ -3,12 +3,9 @@
 namespace Tests\Feature\HR;
 
 use App\Models\Employee;
-use App\Models\EmployeeSchedule;
-use App\Models\Holiday;
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
-use App\Models\Shift;
 use App\Models\User;
 use App\Services\LeaveService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,13 +32,11 @@ class LeaveTest extends TestCase
             );
     }
 
-    public function test_filing_computes_working_days_and_skips_holidays(): void
+    public function test_filing_computes_working_days(): void
     {
         [$employee, $type] = $this->employeeWithCredits(15);
 
-        // 2026-04-06 to 2026-04-10 is Mon–Fri; the 9th is Araw ng Kagitingan.
-        Holiday::create(['name' => 'Araw ng Kagitingan', 'date' => '2026-04-09', 'type' => 'regular']);
-
+        // 2026-04-06 to 2026-04-10 is Monday to Friday.
         $this->actingAs($employee->user)->post('/hr/leave', [
             'employee_id' => $employee->id,
             'leave_type_id' => $type->id,
@@ -50,21 +45,12 @@ class LeaveTest extends TestCase
             'reason' => 'Family obligations out of town.',
         ])->assertRedirect();
 
-        // Five calendar days less the holiday.
-        $this->assertEquals(4.0, (float) LeaveRequest::firstOrFail()->days_requested);
+        $this->assertEquals(5.0, (float) LeaveRequest::firstOrFail()->days_requested);
     }
 
-    public function test_rest_days_do_not_consume_credits(): void
+    public function test_weekends_do_not_consume_credits(): void
     {
         [$employee, $type] = $this->employeeWithCredits(15);
-        $shift = Shift::factory()->create();
-
-        EmployeeSchedule::create([
-            'employee_id' => $employee->id,
-            'shift_id' => $shift->id,
-            'effective_from' => '2026-01-01',
-            'days_of_week' => [1, 2, 3, 4, 5], // weekdays only
-        ]);
 
         // 2026-04-10 is a Friday; the 11th and 12th are the weekend.
         $this->actingAs($employee->user)->post('/hr/leave', [

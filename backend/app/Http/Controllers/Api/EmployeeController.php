@@ -10,6 +10,7 @@ use App\Http\Resources\EmployeeDocumentResource;
 use App\Http\Resources\EmployeeResource;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
+use App\Services\DataAccessLogger;
 use App\Services\EmployeeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -67,9 +68,11 @@ class EmployeeController extends Controller
     }
 
     /** GET /api/v1/employees/{employee} */
-    public function show(Employee $employee): EmployeeResource
+    public function show(Employee $employee, DataAccessLogger $access): EmployeeResource
     {
         Gate::authorize('view', $employee);
+
+        $access->accessed($employee, 'api_view', ['employee' => $employee->full_name]);
 
         return new EmployeeResource(
             $employee->load(['department', 'position', 'supervisor', 'documents.uploader']),

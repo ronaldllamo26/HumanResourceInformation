@@ -2,10 +2,6 @@
 
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\ArchiveController;
-use App\Http\Controllers\AttendanceAdjustmentController;
-use App\Http\Controllers\AttendanceExceptionController;
-use App\Http\Controllers\AttendanceHistoryController;
-use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\CompensationController;
 use App\Http\Controllers\ComplianceController;
@@ -19,24 +15,22 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\EmployeeImportController;
 use App\Http\Controllers\EmployeeQualificationController;
 use App\Http\Controllers\EndorsementController;
-use App\Http\Controllers\HolidayController;
 use App\Http\Controllers\KpiController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveCalendarController;
 use App\Http\Controllers\LeaveController;
 use App\Http\Controllers\LeaveTypeController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OnboardingController;
-use App\Http\Controllers\OvertimeController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayslipController;
 use App\Http\Controllers\PerformanceController;
-use App\Http\Controllers\PeriodAttendanceController;
 use App\Http\Controllers\PositionController;
+use App\Http\Controllers\PrivacyNoticeController;
 use App\Http\Controllers\RecordIntegrityController;
 use App\Http\Controllers\ReviewCycleController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\ScanAccuracyController;
-use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\SeparationController;
 use App\Http\Controllers\Settings\DataExportController;
 use App\Http\Controllers\Settings\IntegrationController;
@@ -44,8 +38,13 @@ use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SettingsController;
 use App\Http\Controllers\Settings\UserAccessController;
 use App\Http\Controllers\ThirteenthMonthController;
-use App\Http\Controllers\TimekeepingController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\Timekeeping\ClientTimesheetController;
+use App\Http\Controllers\Timekeeping\CutoffController;
+use App\Http\Controllers\Timekeeping\HolidayController;
+use App\Http\Controllers\Timekeeping\OvertimeController;
+use App\Http\Controllers\Timekeeping\ShiftController;
+use App\Http\Controllers\Timekeeping\TimeCorrectionController;
+use App\Http\Controllers\Timekeeping\TimeRecordController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -53,6 +52,12 @@ Route::get('/', fn () => redirect()->route('dashboard'));
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    Route::get('/notifications', NotificationController::class)->name('notifications');
+
+    // RA 10173: read once before anything else, and readable any time after.
+    Route::get('/privacy-notice', [PrivacyNoticeController::class, 'show'])->name('privacy.notice');
+    Route::post('/privacy-notice', [PrivacyNoticeController::class, 'acknowledge'])->name('privacy.acknowledge');
 
     /*
     |----------------------------------------------------------------------
@@ -99,6 +104,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
          */
         Route::post('employees/{employee}/verify-license', [EmployeeController::class, 'verifyLicense'])
             ->name('employees.verifyLicense');
+
+        /*
+         * Shows one masked government number, bank account or licence number
+         * in full, and logs it. A POST so it is never cached, prefetched or
+         * left in browser history, and throttled so it cannot be used to
+         * walk the workforce's numbers one request at a time.
+         */
+        Route::post('employees/{employee}/reveal', [EmployeeController::class, 'reveal'])
+            ->middleware('throttle:30,1')
+            ->name('employees.reveal');
 
         /*
          * Moving somebody between job titles, reached from the Positions
@@ -182,13 +197,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('credentials', [CredentialController::class, 'index'])->name('credentials');
 
         /*
-         * AI & Analytics — Workforce demographics, timekeeping insights,
+         * AI & Analytics — Workforce demographics,
          * multi-file AI scanner, and OCR performance benchmarking.
          */
         Route::get('analytics/workforce', [AnalyticsController::class, 'workforce'])
             ->name('analytics.workforce');
-        Route::get('analytics/attendance', [AnalyticsController::class, 'attendance'])
-            ->name('analytics.attendance');
 
         // Centralized AI Batch Document Scanner
         Route::get('employees/documents/batch', [DocumentBatchController::class, 'create'])
@@ -263,87 +276,59 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('employees/{employee}/documents/{document}', [EmployeeController::class, 'destroyDocument'])
             ->name('employees.documents.destroy');
 
-        // Module 2 — Timekeeping & Attendance
-        Route::get('timekeeping', [TimekeepingController::class, 'index'])->name('timekeeping');
-        Route::post('timekeeping', [TimekeepingController::class, 'store'])->name('timekeeping.store');
-        Route::post('timekeeping/import', [TimekeepingController::class, 'import'])
-            ->name('timekeeping.import');
-        // The cutoff sheet — a fortnight of attendance for a whole department
-        // or client at once. Declared before the {attendanceLog} wildcard so
-        // "period" is never read as a record id.
-        Route::get('timekeeping/period', [PeriodAttendanceController::class, 'index'])
-            ->name('timekeeping.period');
-        Route::post('timekeeping/period', [PeriodAttendanceController::class, 'store'])
-            ->name('timekeeping.period.store');
-
-        // One person's cutoff, as a calendar. Reached by clicking their row on
-        // Records; gated on EmployeePolicy::view rather than on the log.
-        Route::get('timekeeping/employee/{employee}', [TimekeepingController::class, 'show'])
-            ->name('timekeeping.employee');
-
-        Route::delete('timekeeping/{attendanceLog}', [TimekeepingController::class, 'destroy'])
-            ->name('timekeeping.destroy');
-
         /*
-         * The exception-handling step: an employee cannot edit a time record
-         * and never should be able to, so a discrepancy on their DTR becomes a
-         * request a supervisor or HR decides on before it reaches the log.
+         * Module 2 — Time & Attendance. Seven screens under one prefix:
+         * daily records, shifts & rest days, holidays, overtime, corrections,
+         * cutoff closing, and client timesheets.
          */
-        Route::get('timekeeping/adjustments', [AttendanceAdjustmentController::class, 'index'])
-            ->name('adjustments');
-        Route::post('timekeeping/adjustments', [AttendanceAdjustmentController::class, 'store'])
-            ->name('adjustments.store');
-        Route::post('timekeeping/adjustments/{adjustment}/decide', [AttendanceAdjustmentController::class, 'decide'])
-            ->name('adjustments.decide');
-        Route::post('timekeeping/adjustments/{adjustment}/cancel', [AttendanceAdjustmentController::class, 'cancel'])
-            ->name('adjustments.cancel');
+        Route::prefix('timekeeping')->name('timekeeping.')->group(function () {
+            Route::get('/', [TimeRecordController::class, 'index'])->name('records');
+            Route::post('records', [TimeRecordController::class, 'store'])->name('records.store');
+            Route::post('records/import', [TimeRecordController::class, 'import'])->name('records.import');
+            Route::put('records/{record}', [TimeRecordController::class, 'update'])->name('records.update');
+            Route::delete('records/{record}', [TimeRecordController::class, 'destroy'])->name('records.destroy');
 
-        // Overtime filing and approval
-        Route::get('timekeeping/overtime', [OvertimeController::class, 'index'])->name('overtime');
-        Route::post('timekeeping/overtime', [OvertimeController::class, 'store'])->name('overtime.store');
-        Route::put('timekeeping/overtime/{overtimeRequest}', [OvertimeController::class, 'update'])
-            ->name('overtime.update');
-        Route::post('timekeeping/overtime/{overtimeRequest}/decide', [OvertimeController::class, 'decide'])
-            ->name('overtime.decide');
-        Route::post('timekeeping/overtime/{overtimeRequest}/cancel', [OvertimeController::class, 'cancel'])
-            ->name('overtime.cancel');
+            Route::get('shifts', [ShiftController::class, 'index'])->name('shifts');
+            Route::post('shifts', [ShiftController::class, 'store'])->name('shifts.store');
+            Route::put('shifts/{shift}', [ShiftController::class, 'update'])->name('shifts.update');
+            Route::delete('shifts/{shift}', [ShiftController::class, 'destroy'])->name('shifts.destroy');
+            Route::post('schedules', [ShiftController::class, 'assign'])->name('schedules.store');
+            Route::delete('schedules/{assignment}', [ShiftController::class, 'unassign'])->name('schedules.destroy');
 
-        // Shifts and employee schedules
-        Route::get('timekeeping/schedules', [ScheduleController::class, 'index'])->name('schedules');
-        Route::post('timekeeping/shifts', [ScheduleController::class, 'storeShift'])->name('shifts.store');
-        Route::put('timekeeping/shifts/{shift}', [ScheduleController::class, 'updateShift'])->name('shifts.update');
-        Route::delete('timekeeping/shifts/{shift}', [ScheduleController::class, 'destroyShift'])->name('shifts.destroy');
-        // The work calendar's holiday list — read by leave costing, attendance
-        // status, and holiday pay, so it is not merely a reference table.
-        Route::get('timekeeping/holidays', [HolidayController::class, 'index'])->name('holidays');
-        Route::post('timekeeping/holidays', [HolidayController::class, 'store'])->name('holidays.store');
-        Route::put('timekeeping/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
-        Route::delete('timekeeping/holidays/{holiday}', [HolidayController::class, 'destroy'])->name('holidays.destroy');
+            Route::get('holidays', [HolidayController::class, 'index'])->name('holidays');
+            Route::post('holidays', [HolidayController::class, 'store'])->name('holidays.store');
+            Route::put('holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
+            Route::delete('holidays/{holiday}', [HolidayController::class, 'destroy'])->name('holidays.destroy');
 
-        Route::post('timekeeping/schedules', [ScheduleController::class, 'storeSchedule'])->name('schedules.store');
-        Route::delete('timekeeping/schedules/{schedule}', [ScheduleController::class, 'destroySchedule'])
-            ->name('schedules.destroy');
+            Route::get('overtime', [OvertimeController::class, 'index'])->name('overtime');
+            Route::post('overtime', [OvertimeController::class, 'store'])->name('overtime.store');
+            Route::post('overtime/{overtime}/decide', [OvertimeController::class, 'decide'])->name('overtime.decide');
+            Route::post('overtime/{overtime}/cancel', [OvertimeController::class, 'cancel'])->name('overtime.cancel');
 
-        /*
-         * The per-employee attendance summary is the Records screen itself
-         * now, so Reports has nowhere left to be: it showed the same rows for
-         * the same range with no way to reach the days behind them. The route
-         * redirects rather than 404s, carrying the range across, the same way
-         * /settings/organization still lands somewhere useful.
-         */
-        Route::get('timekeeping/reports', fn (Request $request) => redirect()->route(
-            'hr.timekeeping',
-            $request->only('from', 'to'),
-        ))->name('reports');
+            Route::get('corrections', [TimeCorrectionController::class, 'index'])->name('corrections');
+            Route::post('corrections', [TimeCorrectionController::class, 'store'])->name('corrections.store');
+            Route::post('corrections/{correction}/decide', [TimeCorrectionController::class, 'decide'])->name('corrections.decide');
+            Route::post('corrections/{correction}/cancel', [TimeCorrectionController::class, 'cancel'])->name('corrections.cancel');
 
-        Route::get('timekeeping/export', [AttendanceReportController::class, 'export'])
-            ->name('timekeeping.export');
+            Route::get('cutoffs', [CutoffController::class, 'index'])->name('cutoffs');
+            Route::get('cutoffs/{period}', [CutoffController::class, 'show'])->name('cutoffs.show');
+            Route::post('cutoffs/{period}/close', [CutoffController::class, 'close'])->name('cutoffs.close');
+            Route::post('cutoffs/{period}/reopen', [CutoffController::class, 'reopen'])->name('cutoffs.reopen');
 
-        // Automated exception checker — flags DTR records worth a second look.
-        Route::get('timekeeping/exceptions', [AttendanceExceptionController::class, 'index'])->name('exceptions');
+            Route::get('client-timesheets', [ClientTimesheetController::class, 'index'])->name('client-timesheets');
+            Route::post('client-timesheets', [ClientTimesheetController::class, 'prepare'])->name('client-timesheets.prepare');
+            Route::get('client-timesheets/{timesheet}', [ClientTimesheetController::class, 'show'])->name('client-timesheets.show');
+            Route::post('client-timesheets/{timesheet}/send', [ClientTimesheetController::class, 'send'])->name('client-timesheets.send');
+            Route::post('client-timesheets/{timesheet}/answer', [ClientTimesheetController::class, 'answer'])->name('client-timesheets.answer');
 
-        // Who edited a DTR record, when, and what changed.
-        Route::get('timekeeping/history', [AttendanceHistoryController::class, 'index'])->name('timekeeping.history');
+            // Links to the old module's screens (reports, exceptions, history…)
+            // land on Daily Time Records with a reason rather than a bare 404.
+            Route::get('{any}', fn () => redirect()
+                ->route('hr.timekeeping.records')
+                ->with('info', 'That Time & Attendance page was replaced. Here are the daily time records.'))
+                ->where('any', '.*')
+                ->name('legacy');
+        });
 
         // Module 3 — Leave & Absence
         Route::get('leave', [LeaveController::class, 'index'])->name('leave');
@@ -496,6 +481,7 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
 
     Route::get('users', [UserAccessController::class, 'index'])->name('users');
     Route::post('users', [UserAccessController::class, 'store'])->name('users.store');
+    Route::post('users/access-review', [UserAccessController::class, 'review'])->name('users.review');
     Route::put('users/{user}/role', [UserAccessController::class, 'updateRole'])->name('users.role');
     Route::post('users/{user}/toggle', [UserAccessController::class, 'toggleActive'])->name('users.toggle');
     Route::post('users/{user}/reset-password', [UserAccessController::class, 'resetPassword'])->name('users.reset');
@@ -506,6 +492,9 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
     Route::post('security/tokens/revoke-all', [SecurityController::class, 'revokeTokens'])->name('security.tokens.revokeAll');
     Route::delete('security/tokens/{token}', [SecurityController::class, 'revokeToken'])->name('security.tokens.revoke');
     Route::delete('security/account', [SecurityController::class, 'destroyAccount'])->name('security.account');
+    Route::post('security/audit/verify', [SecurityController::class, 'verifyAuditLog'])
+        ->middleware('throttle:6,1')
+        ->name('security.audit.verify');
 
     Route::get('data', [SettingsController::class, 'data'])->name('data');
     Route::put('data', [SettingsController::class, 'updateData'])->name('data.update');

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Models\AttendanceLog;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
@@ -169,7 +168,6 @@ class SettingsController extends Controller
     {
         return [
             ['label' => 'Employees', 'count' => Employee::withTrashed()->count()],
-            ['label' => 'Attendance records', 'count' => AttendanceLog::count()],
             ['label' => 'Leave requests', 'count' => LeaveRequest::count()],
             ['label' => 'Payslips', 'count' => Payslip::count()],
             ['label' => 'Performance reviews', 'count' => PerformanceReview::count()],

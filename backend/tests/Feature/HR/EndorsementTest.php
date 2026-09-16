@@ -166,20 +166,54 @@ class EndorsementTest extends TestCase
         ]);
     }
 
-    public function test_the_form_is_unreachable_without_an_endorsement(): void
+    public function test_without_an_endorsement_the_form_opens_as_a_direct_add(): void
     {
-        // The whole point of the queue: there is no second door. A bare visit
-        // is redirected rather than 403'd, because the person is allowed to
-        // create employees — they are just in the wrong place to start.
         $this->actingAs($this->hr())
             ->get('/hr/employees/create')
-            ->assertRedirect('/hr/endorsements');
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('HR/Employees/Create')
+                ->where('endorsement', null));
     }
 
-    public function test_a_post_without_an_endorsement_creates_nobody(): void
+    /**
+     * The direct door stays accountable: with no endorsement to record who
+     * decided and why, the reason is required instead.
+     */
+    public function test_a_direct_add_without_a_reason_creates_nobody(): void
     {
         $this->actingAs($this->hr())
             ->post('/hr/employees', $this->employeePayload(['endorsement_id' => null]))
+            ->assertSessionHasErrors('direct_hire_reason');
+
+        $this->assertDatabaseCount('employees', 0);
+    }
+
+    public function test_a_direct_add_with_a_reason_creates_the_employee_and_logs_why(): void
+    {
+        $hr = $this->hr();
+
+        $this->actingAs($hr)
+            ->post('/hr/employees', $this->employeePayload([
+                'endorsement_id' => null,
+                'direct_hire_reason' => 'Rehire of a former driver, approved by operations.',
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $employee = Employee::firstOrFail();
+
+        $this->assertDatabaseHas('audit_logs', [
+            'event' => 'direct_hire',
+            'user_id' => $hr->id,
+            'auditable_id' => $employee->id,
+        ]);
+    }
+
+    public function test_a_missing_endorsement_id_still_goes_back_to_the_inbox(): void
+    {
+        $this->actingAs($this->hr())
+            ->post('/hr/employees', $this->employeePayload(['endorsement_id' => 999999]))
             ->assertRedirect('/hr/endorsements');
 
         $this->assertDatabaseCount('employees', 0);
