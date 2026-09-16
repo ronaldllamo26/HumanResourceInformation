@@ -130,7 +130,7 @@ class AppServiceProvider extends ServiceProvider
             // round trip in production; in tests it would make every password
             // assertion depend on the network, and locally it fails open
             // anyway, so it earns nothing but latency there.
-            return $this->app->isProduction() ? $rule->uncompromised() : $rule;
+            return $this->app->environment('production') ? $rule->uncompromised() : $rule;
         });
     }
 }
