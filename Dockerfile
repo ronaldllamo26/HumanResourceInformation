@@ -1,8 +1,17 @@
-FROM php:8.4-cli-alpine
+FROM php:8.3-cli-alpine
 
 # Install pre-compiled PHP extensions instantly via installer (0 compilation time)
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-RUN chmod +x /usr/local/bin/install-php-extensions && install-php-extensions pdo_pgsql pgsql
+RUN chmod +x /usr/local/bin/install-php-extensions && install-php-extensions \
+    bcmath \
+    exif \
+    gd \
+    intl \
+    opcache \
+    pcntl \
+    pdo_pgsql \
+    pgsql \
+    zip
 
 # Get Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -13,22 +22,25 @@ WORKDIR /var/www/html
 COPY backend/composer.json backend/composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --ignore-platform-reqs
 
-# Copy backend source code & pre-compiled frontend assets
+# Copy backend source code & pre-compiled frontend assets in public/build
 COPY backend/ ./
-COPY frontend/dist/ ./public/
 
 # Optimize autoloader
 RUN composer dump-autoload --optimize --no-dev --ignore-platform-reqs
 
 # Set permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
+RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
 EXPOSE 8000
+ENV PHP_CLI_SERVER_WORKERS=4
 
 # Health check on Laravel's /up endpoint
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD curl -f http://127.0.0.1:${PORT:-8000}/up || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:${PORT:-8000}/up || exit 1
 
-# Start command — generate .env, migrate, seed, cache, and serve
-CMD ["sh", "-c", "env | grep -E '^(APP_|DB_|DATABASE_|SESSION_|QUEUE_|CACHE_|MAIL_|TRUSTED_|LOG_|PORT)' > .env && (grep -q APP_KEY .env || php artisan key:generate --force) && php artisan config:clear && php artisan migrate --force && (php artisan db:seed --force || true) && php artisan config:cache && php artisan route:cache; php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
+COPY docker/start.sh /usr/local/bin/start-hris
+RUN sed -i 's/\r$//' /usr/local/bin/start-hris && chmod +x /usr/local/bin/start-hris
+
+CMD ["start-hris"]
