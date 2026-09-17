@@ -52,18 +52,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
     }, [currentUrl, groups]);
 
     const handleParentClick = (item) => {
-        const alreadyOpen = expandedModule === item.id;
-
-        setExpandedModule(alreadyOpen ? null : item.id);
-
-        // Opening a module lands the user on its first page.
-        if (!alreadyOpen) {
-            const first = item.children?.[0];
-
-            if (first?.href && !isHrefActive(first.href, currentUrl)) {
-                router.visit(first.href);
-            }
-        }
+        setExpandedModule((prev) => (prev === item.id ? null : item.id));
     };
 
     return (

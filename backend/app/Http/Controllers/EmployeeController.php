@@ -233,7 +233,7 @@ class EmployeeController extends Controller
 
         if (! $employee) {
             return redirect()
-                ->route('employees.index')
+                ->route('hr.employees.index')
                 ->with('info', 'No employee 201 record is linked to this account.');
         }
 
