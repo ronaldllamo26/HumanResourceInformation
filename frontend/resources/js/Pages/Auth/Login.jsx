@@ -1,54 +1,28 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { Head, useForm, usePage } from '@inertiajs/react';
 import { LogoMark } from '@/Components/layout/PrimePowerLogo';
 import { Button, Input, InputError, Label } from '@/Components/ui';
 
-export default function Login({ canResetPassword = true }) {
-    const { login, brand } = useAuth();
-    const navigate = useNavigate();
-    const name = brand?.name ?? 'PrimePower';
+export default function Login({ status }) {
+    const brand = usePage().props.brand ?? {};
+    const name = brand.name ?? 'PrimePower';
 
-    const [data, setData] = useState({
-        email: '',
+    const { data, setData, post, processing, errors, reset } = useForm({
+        username: '',
         password: '',
     });
-    const [errors, setErrors] = useState({});
-    const [processing, setProcessing] = useState(false);
-    const [status, setStatus] = useState('');
 
-    const submit = async (event) => {
+    const submit = (event) => {
         event.preventDefault();
-        setProcessing(true);
-        setErrors({});
-        setStatus('');
 
-        try {
-            await login({
-                email: data.email,
-                password: data.password,
-            });
-            navigate('/dashboard');
-        } catch (error) {
-            if (error.response?.data?.errors) {
-                const apiErrors = error.response.data.errors;
-                setErrors({
-                    email: Array.isArray(apiErrors.email) ? apiErrors.email[0] : apiErrors.email,
-                    password: Array.isArray(apiErrors.password) ? apiErrors.password[0] : apiErrors.password,
-                });
-            } else if (error.response?.data?.message) {
-                setErrors({ email: error.response.data.message });
-            } else {
-                setErrors({ email: 'Unable to sign in. Please verify your credentials.' });
-            }
-        } finally {
-            setProcessing(false);
-            setData((prev) => ({ ...prev, password: '' }));
-        }
+        post(route('login'), {
+            onFinish: () => reset('password'),
+        });
     };
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-background p-4 sm:p-6">
+            <Head title="Log in" />
+
             <div className="grid w-full max-w-4xl overflow-hidden rounded-xl border border-border bg-card shadow-lg lg:grid-cols-2">
                 {/* Form */}
                 <div className="px-6 py-10 sm:px-10">
@@ -79,18 +53,21 @@ export default function Login({ canResetPassword = true }) {
 
                     <form onSubmit={submit} className="space-y-4">
                         <div>
-                            <Label htmlFor="email">Email Address</Label>
+                            <Label htmlFor="username">Username</Label>
                             <Input
-                                id="email"
-                                type="email"
-                                name="email"
-                                value={data.email}
+                                id="username"
+                                type="text"
+                                name="username"
+                                value={data.username}
                                 autoComplete="username"
+                                placeholder="name@primepower.test or admin"
+                                autoCapitalize="none"
+                                spellCheck={false}
                                 autoFocus
-                                error={errors.email}
-                                onChange={(event) => setData((prev) => ({ ...prev, email: event.target.value }))}
+                                error={errors.username}
+                                onChange={(event) => setData('username', event.target.value)}
                             />
-                            <InputError message={errors.email} />
+                            <InputError message={errors.username} />
                         </div>
 
                         <div>
@@ -102,7 +79,7 @@ export default function Login({ canResetPassword = true }) {
                                 value={data.password}
                                 autoComplete="current-password"
                                 error={errors.password}
-                                onChange={(event) => setData((prev) => ({ ...prev, password: event.target.value }))}
+                                onChange={(event) => setData('password', event.target.value)}
                             />
                             <InputError message={errors.password} />
                         </div>
@@ -119,7 +96,7 @@ export default function Login({ canResetPassword = true }) {
                     </form>
 
                     <p className="mt-8 text-center text-xs text-muted-foreground">
-                        Accounts are issued by HR. Contact your HR administrator for access.
+                        Accounts are issued by HR. Can&apos;t sign in? Ask your administrator.
                     </p>
                 </div>
 
