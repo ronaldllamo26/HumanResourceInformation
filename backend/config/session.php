@@ -51,7 +51,7 @@ return [
      * `lifetime` only reaches session auth — the same line RequirePasswordChange
      * draws.
      */
-    'lifetime' => (int) env('SESSION_LIFETIME', 10),
+    'lifetime' => (int) env('SESSION_LIFETIME', 5),
 
     /*
      * How long before that the screen warns, in seconds.

@@ -1,6 +1,6 @@
 import { Link, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { History, KeyRound, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { History, KeyRound, Mail, Send, ShieldCheck, ShieldOff, TriangleAlert } from 'lucide-react';
 import SettingsLayout from '@/Layouts/SettingsLayout';
 import {
     Badge,
@@ -21,37 +21,21 @@ import {
 } from '@/Components/ui';
 import { formatDate } from '@/lib/utils';
 
-const titleCase = (value) =>
-    String(value ?? '')
-        .replace(/[_-]/g, ' ')
-        .replace(/\b\w/g, (character) => character.toUpperCase());
-
-const AUDIT_FILTERS = [
-    { id: 'changes', label: 'Record changes' },
-    { id: 'auth', label: 'Sign-ins' },
-    { id: 'all', label: 'All' },
-];
-
-/** A failed sign-in is a finding; a successful one is a note. */
-const eventVariant = (entry) => {
-    if (entry.event === 'login_failed' || entry.event === 'lockout') return 'destructive';
-    if (entry.event === 'deleted') return 'destructive';
-    if (entry.event === 'created') return 'success';
-    if (entry.is_auth) return 'muted';
-    return 'primary';
-};
-
 export default function Security({
-    account,
-    tokens,
-    auditLog,
-    auditFilter,
-    canViewAudit,
+    account = {},
+    tokens = [],
+    canViewAudit = false,
     canRename = false,
     mustChangePassword = false,
     privacy = null,
+    otp = {},
 }) {
+    const isOtpActive = Boolean(otp?.otp_enabled && otp?.otp_email);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [disableModalOpen, setDisableModalOpen] = useState(false);
+    const [enableModalOpen, setEnableModalOpen] = useState(false);
+    const [changeEmailModalOpen, setChangeEmailModalOpen] = useState(false);
+    const [sendingTest, setSendingTest] = useState(false);
 
     const passwordForm = useForm({
         current_password: '',
@@ -59,6 +43,23 @@ export default function Security({
         password_confirmation: '',
     });
     const deleteForm = useForm({ password: '' });
+
+    const disableForm = useForm({
+        password: '',
+        otp_enabled: false,
+    });
+
+    const enableForm = useForm({
+        otp_email: otp?.otp_email ?? '',
+        password: '',
+        otp_enabled: true,
+    });
+
+    const changeEmailForm = useForm({
+        otp_email: otp?.otp_email ?? '',
+        password: '',
+        otp_enabled: true,
+    });
 
     const submitPassword = (event) => {
         event.preventDefault();
@@ -69,8 +70,49 @@ export default function Security({
         });
     };
 
+    const handleDisableOtp = (e) => {
+        e.preventDefault();
+        disableForm.put('/settings/security/otp', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDisableModalOpen(false);
+                disableForm.reset();
+            },
+        });
+    };
+
+    const handleEnableOtp = (e) => {
+        e.preventDefault();
+        enableForm.put('/settings/security/otp', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEnableModalOpen(false);
+                enableForm.reset('password');
+            },
+        });
+    };
+
+    const handleChangeEmail = (e) => {
+        e.preventDefault();
+        changeEmailForm.put('/settings/security/otp', {
+            preserveScroll: true,
+            onSuccess: () => {
+                setChangeEmailModalOpen(false);
+                changeEmailForm.reset('password');
+            },
+        });
+    };
+
+    const sendTestOtp = () => {
+        setSendingTest(true);
+        router.post('/settings/security/otp/test', {}, {
+            preserveScroll: true,
+            onFinish: () => setSendingTest(false),
+        });
+    };
+
     return (
-        <SettingsLayout title="Security" description="Your password and API tokens.">
+        <SettingsLayout title="Security">
             {/* The user did not ask for this screen — RequirePasswordChange
                 sent them here. Without saying so, the redirect reads as the
                 system losing their click. */}
@@ -89,10 +131,7 @@ export default function Security({
             )}
 
             <Card>
-                <CardHeader
-                    title="Password"
-                    description="Changing your password does not sign you out of this browser."
-                />
+                <CardHeader title="Password" />
                 <CardBody>
                     {/* Stated here because a username is easy to forget, and
                         this is the screen somebody opens to sort out a login. */}
@@ -175,11 +214,155 @@ export default function Security({
                 </CardBody>
             </Card>
 
+            {/* Multi-Factor Authentication (Email OTP) */}
+            <Card>
+                <CardHeader
+                    title="Two-Factor Authentication (Email OTP)"
+                    badge={
+                        isOtpActive ? (
+                            <Badge variant={otp?.otp_verified ? 'success' : 'warning'}>
+                                {otp?.otp_verified ? 'Enabled & Verified' : 'Enabled (Pending Verification)'}
+                            </Badge>
+                        ) : (
+                            <Badge variant="muted">Disabled (Password Only)</Badge>
+                        )
+                    }
+                />
+                <CardBody className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Protect your account with a two-factor sign-in code. When enabled, signing in requires a 6-digit one-time code sent directly to your Gmail inbox, valid for {otp?.ttl_minutes ?? 2} minutes.
+                    </p>
+
+                    {isOtpActive ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 p-4">
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <Mail className="h-4 w-4 text-primary" />
+                                    <span className="font-mono text-sm font-semibold text-foreground">
+                                        {otp.otp_email}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Sign-in codes are sent to this address on every login.
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={sendTestOtp}
+                                    disabled={sendingTest}
+                                >
+                                    <Send className="h-3.5 w-3.5" />
+                                    {sendingTest ? 'Sending...' : 'Send test code'}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        changeEmailForm.setData({
+                                            otp_email: otp.otp_email,
+                                            password: '',
+                                            otp_enabled: true,
+                                        });
+                                        changeEmailForm.clearErrors();
+                                        setChangeEmailModalOpen(true);
+                                    }}
+                                >
+                                    Change
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    onClick={() => {
+                                        disableForm.setData({
+                                            password: '',
+                                            otp_enabled: false,
+                                        });
+                                        disableForm.clearErrors();
+                                        setDisableModalOpen(true);
+                                    }}
+                                >
+                                    <ShieldOff className="h-3.5 w-3.5" />
+                                    Disable
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border border-border bg-muted/10 p-4">
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <ShieldOff className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm font-semibold text-foreground">
+                                        Two-Factor Authentication is currently Disabled
+                                    </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    {otp?.otp_email ? (
+                                        <>
+                                            Configured address:{' '}
+                                            <span className="font-mono font-medium text-foreground">
+                                                {otp.otp_email}
+                                            </span>
+                                            . You can re-enable 2FA anytime using your password.
+                                        </>
+                                    ) : (
+                                        'Connect your personal Gmail to add an extra layer of protection to your account.'
+                                    )}
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                {otp?.otp_email && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            changeEmailForm.setData({
+                                                otp_email: otp.otp_email,
+                                                password: '',
+                                                otp_enabled: false,
+                                            });
+                                            changeEmailForm.clearErrors();
+                                            setChangeEmailModalOpen(true);
+                                        }}
+                                    >
+                                        Change Email
+                                    </Button>
+                                )}
+                                <Button
+                                    type="button"
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => {
+                                        enableForm.setData({
+                                            otp_email: otp?.otp_email ?? '',
+                                            password: '',
+                                            otp_enabled: true,
+                                        });
+                                        enableForm.clearErrors();
+                                        setEnableModalOpen(true);
+                                    }}
+                                >
+                                    <ShieldCheck className="h-3.5 w-3.5" />
+                                    Enable 2FA
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </CardBody>
+            </Card>
+
             {privacy && (
                 <Card>
                     <CardHeader
                         title="Privacy Notice"
-                        description="What is collected about you, why, and who can see it (RA 10173)."
                         action={
                             <Link href={route('privacy.notice')}>
                                 <Button variant="outline">
@@ -210,7 +393,6 @@ export default function Security({
             <Card>
                 <CardHeader
                     title="API Tokens"
-                    description="Tokens issued to your account for the REST API."
                     action={
                         tokens.length > 0 && (
                             <Button
@@ -285,120 +467,25 @@ export default function Security({
                 </Table>
             </Card>
 
+            {/* The log itself moved to Administration → Audit Logs, where it
+                has a date range and pages. This screen keeps the door: 50 rows
+                under somebody's password form answered "what happened in the
+                last hour" and nothing else. */}
             {canViewAudit && (
                 <Card>
                     <CardHeader
                         title="Audit Log"
-                        description="The 50 most recent entries across every module."
                         action={
-                            <div className="flex flex-wrap gap-1">
-                                {AUDIT_FILTERS.map((option) => (
-                                    <Button
-                                        key={option.id}
-                                        size="sm"
-                                        variant={
-                                            auditFilter === option.id ? 'primary' : 'outline'
-                                        }
-                                        onClick={() =>
-                                            router.get(
-                                                '/settings/security',
-                                                { audit: option.id },
-                                                { preserveScroll: true, preserveState: true },
-                                            )
-                                        }
-                                    >
-                                        {option.label}
-                                    </Button>
-                                ))}
-                                {/* Every entry is signed when written; this checks
-                                    none has been edited since. */}
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                        router.post(
-                                            route('settings.security.audit.verify'),
-                                            {},
-                                            { preserveScroll: true },
-                                        )
-                                    }
-                                >
-                                    <ShieldCheck className="h-4 w-4" />
-                                    Verify integrity
-                                </Button>
-                            </div>
+                            <Button variant="outline" href="/settings/audit-logs">
+                                <History className="h-4 w-4" />
+                                Open Audit Logs
+                            </Button>
                         }
                     />
-
-                    <Table>
-                        <THead>
-                            <TR>
-                                <TH>Event</TH>
-                                <TH>Record</TH>
-                                <TH>Detail</TH>
-                                <TH>User</TH>
-                                <TH>When</TH>
-                            </TR>
-                        </THead>
-
-                        <TBody>
-                            {auditLog.length === 0 ? (
-                                <TableEmpty
-                                    colSpan={5}
-                                    icon={History}
-                                    title="No audit entries"
-                                />
-                            ) : (
-                                auditLog.map((entry) => (
-                                    <TR key={entry.id}>
-                                        <TD>
-                                            <Badge variant={eventVariant(entry)}>
-                                                {titleCase(entry.event)}
-                                            </Badge>
-                                        </TD>
-                                        <TD className="text-sm text-foreground">
-                                            {/* An attempt on an address that is
-                                                not ours has no record to name. */}
-                                            {entry.subject_id
-                                                ? `${entry.subject} #${entry.subject_id}`
-                                                : '—'}
-                                        </TD>
-                                        <TD className="max-w-xs">
-                                            <p className="truncate text-xs text-muted-foreground">
-                                                {entry.is_auth
-                                                    ? (entry.attempted_login ?? '—')
-                                                    : entry.changed.length > 0
-                                                      ? entry.changed.map(titleCase).join(', ')
-                                                      : '—'}
-                                            </p>
-                                        </TD>
-                                        <TD className="text-sm text-muted-foreground">
-                                            {/* Nobody is signed in during a
-                                                failed attempt — show where it
-                                                came from instead of "System". */}
-                                            {entry.is_auth && entry.user === 'System'
-                                                ? (entry.ip_address ?? '—')
-                                                : entry.user}
-                                        </TD>
-                                        <TD className="whitespace-nowrap text-sm text-muted-foreground">
-                                            {formatDate(entry.created_at, {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                            })}
-                                        </TD>
-                                    </TR>
-                                ))
-                            )}
-                        </TBody>
-                    </Table>
                 </Card>
             )}
-
             <Card className="border-destructive/30">
-                <CardHeader
-                    title="Delete Account"
-                    description="Permanently removes your login. This cannot be undone."
-                />
+                <CardHeader title="Delete Account" />
                 <CardBody>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <p className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -437,8 +524,12 @@ export default function Security({
                         {({ id }) => (
                             <Input
                                 id={id}
-                                type="password"
-                                autoComplete="current-password"
+                                type="text"
+                                style={{ WebkitTextSecurity: 'disc' }}
+                                autoComplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
                                 value={deleteForm.data.password}
                                 onChange={(event) =>
                                     deleteForm.setData('password', event.target.value)
@@ -458,6 +549,247 @@ export default function Security({
                             loading={deleteForm.processing}
                         >
                             Delete Account
+                        </Button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal: Disable 2FA */}
+            <Modal
+                show={disableModalOpen}
+                onClose={() => {
+                    setDisableModalOpen(false);
+                    disableForm.reset();
+                    disableForm.clearErrors();
+                }}
+                title="Disable Two-Factor Authentication?"
+                maxWidth="md"
+            >
+                <form onSubmit={handleDisableOtp} className="space-y-4">
+                    <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3.5 text-xs text-destructive">
+                        <ShieldOff className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                            <p className="font-semibold">Security Warning</p>
+                            <p className="mt-0.5 text-muted-foreground">
+                                Disabling two-factor authentication makes your account less secure. Once disabled, signing in will only require your password.
+                            </p>
+                        </div>
+                    </div>
+
+                    <p className="text-sm text-muted-foreground">
+                        For security verification, please enter your current password to confirm disabling two-factor authentication.
+                    </p>
+
+                    <Field label="Current Password" required error={disableForm.errors.password}>
+                        {({ id }) => (
+                            <Input
+                                id={id}
+                                type="text"
+                                style={{ WebkitTextSecurity: 'disc' }}
+                                autoComplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                value={disableForm.data.password}
+                                onChange={(e) => disableForm.setData('password', e.target.value)}
+                                error={disableForm.errors.password}
+                            />
+                        )}
+                    </Field>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setDisableModalOpen(false);
+                                disableForm.reset();
+                                disableForm.clearErrors();
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="destructive"
+                            loading={disableForm.processing}
+                        >
+                            Confirm & Disable 2FA
+                        </Button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal: Enable 2FA */}
+            <Modal
+                show={enableModalOpen}
+                onClose={() => {
+                    setEnableModalOpen(false);
+                    enableForm.reset('password');
+                    enableForm.clearErrors();
+                }}
+                title="Enable Two-Factor Authentication"
+                maxWidth="md"
+            >
+                <form onSubmit={handleEnableOtp} className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Signing in will require a 6-digit one-time code sent directly to your Gmail inbox ({otp?.ttl_minutes ?? 2}-minute validity).
+                    </p>
+
+                    <Field
+                        label="Personal or Company Gmail"
+                        required
+                        error={enableForm.errors.otp_email}
+                        hint="The email address where your 6-digit verification codes will be sent."
+                    >
+                        {({ id }) => (
+                            <Input
+                                id={id}
+                                type="text"
+                                name="auth_otp_destination"
+                                autoComplete="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                data-form-type="other"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                placeholder="name@gmail.com"
+                                value={enableForm.data.otp_email}
+                                onChange={(e) => enableForm.setData('otp_email', e.target.value)}
+                                error={enableForm.errors.otp_email}
+                                required
+                            />
+                        )}
+                    </Field>
+
+                    <Field
+                        label="Current Password"
+                        required
+                        error={enableForm.errors.password}
+                        hint="Enter your current password to authorize this security change."
+                    >
+                        {({ id }) => (
+                            <Input
+                                id={id}
+                                type="text"
+                                style={{ WebkitTextSecurity: 'disc' }}
+                                autoComplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                value={enableForm.data.password}
+                                onChange={(e) => enableForm.setData('password', e.target.value)}
+                                error={enableForm.errors.password}
+                                required
+                            />
+                        )}
+                    </Field>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setEnableModalOpen(false);
+                                enableForm.reset('password');
+                                enableForm.clearErrors();
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            loading={enableForm.processing}
+                        >
+                            Confirm & Enable 2FA
+                        </Button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Modal: Change Email */}
+            <Modal
+                show={changeEmailModalOpen}
+                onClose={() => {
+                    setChangeEmailModalOpen(false);
+                    changeEmailForm.reset('password');
+                    changeEmailForm.clearErrors();
+                }}
+                title="Change 2FA Gmail Address"
+                maxWidth="md"
+            >
+                <form onSubmit={handleChangeEmail} className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Enter your new Gmail address for receiving login verification codes.
+                    </p>
+
+                    <Field
+                        label="New Gmail Address"
+                        required
+                        error={changeEmailForm.errors.otp_email}
+                    >
+                        {({ id }) => (
+                            <Input
+                                id={id}
+                                type="text"
+                                name="auth_otp_destination"
+                                autoComplete="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                data-form-type="other"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                placeholder="newemail@gmail.com"
+                                value={changeEmailForm.data.otp_email}
+                                onChange={(e) => changeEmailForm.setData('otp_email', e.target.value)}
+                                error={changeEmailForm.errors.otp_email}
+                                required
+                            />
+                        )}
+                    </Field>
+
+                    <Field
+                        label="Current Password"
+                        required
+                        error={changeEmailForm.errors.password}
+                        hint="Enter your password to verify this update."
+                    >
+                        {({ id }) => (
+                            <Input
+                                id={id}
+                                type="text"
+                                style={{ WebkitTextSecurity: 'disc' }}
+                                autoComplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                value={changeEmailForm.data.password}
+                                onChange={(e) => changeEmailForm.setData('password', e.target.value)}
+                                error={changeEmailForm.errors.password}
+                                required
+                            />
+                        )}
+                    </Field>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setChangeEmailModalOpen(false);
+                                changeEmailForm.reset('password');
+                                changeEmailForm.clearErrors();
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            loading={changeEmailForm.processing}
+                        >
+                            Update Email
                         </Button>
                     </div>
                 </form>

@@ -50,11 +50,11 @@ The authentication subsystem is powered by **Laravel Fortify** and tightly confi
 * **Implementation:** `Features::registration()` is omitted in [`config/fortify.php`](file:///c:/Users/Gave/Herd/Core2/config/fortify.php#L191).
 * **Rationale:** Public sign-up routes (`/register`) are disabled. Every user account must be provisioned directly by HR through an authorized employee record and assigned a vetted role.
 
-### 2.2 Two-Factor Authentication (2FA / TOTP)
-* **Configuration:** Time-based One-Time Password (TOTP) is implemented via Fortify.
-* **Re-Authentication Guard (`confirmPassword: true`):**
-  Enabling or disabling 2FA forces a password re-entry. This prevents an unauthorized actor from turning off 2FA if an authorized administrator leaves their computer physically unlocked.
-* **Session Persistence:** Once confirmed during login, the 2FA status is trusted for the lifetime of that session, avoiding mid-session fatigue.
+### 2.2 Username Sign-In (no second factor)
+* **Configuration:** People sign in with a **username and password** (`'username' => 'username'` in `config/fortify.php`). A company login does not depend on anybody's personal inbox, and the account's role decides what it can open.
+* **Usernames look like company addresses but are not email:** the role logins are `admin@primepower.com`, `hrstaff@primepower.com` and `employee@primepower.com`, and others come from the name — Juan Dela Cruz becomes `jdelacruz@primepower.com`, with a number added if it is taken; an admin may type another on Settings → Users & Access, where every username is listed.
+* **Accounts have no email.** There is no forgot-password link, no emailed reset and no email verification. An admin resets a forgotten password on Settings → Users & Access, and the person must replace that temporary password at their next sign-in.
+* **Second factors were removed.** The authenticator-app 2FA and the emailed sign-in code are both gone, so the password is the only barrier. This is a known gap for a system holding salary and government identifiers, and it is the first control to restore before running with real employee data.
 
 ### 2.3 Strict Password Complexity & Breach Verification
 Defined centrally in [`app/Providers/AppServiceProvider.php`](file:///c:/Users/Gave/Herd/Core2/app/Providers/AppServiceProvider.php#L91):
@@ -75,7 +75,7 @@ Shared desktop computers in operations hubs, dispatch bays, and HR offices prese
 
 ### 3.1 Server-Enforced Inactivity Expiry
 * **Config:** [`config/session.php`](file:///c:/Users/Gave/Herd/Core2/config/session.php#L54).
-* **Lifetime:** Set to **10 minutes** (`SESSION_LIFETIME=10`).
+* **Lifetime:** Set to **5 minutes** (`SESSION_LIFETIME=5`).
 * **Enforcement:** Enforced server-side. Every request updates `last_activity`. Once the 10-minute idle threshold is breached, the session is invalidated immediately by Laravel's database session driver.
 
 ### 3.2 Intelligent Cross-Tab Client Monitor
@@ -500,7 +500,7 @@ The application does not back itself up — the database does. Procedure:
 ### 15.6 Security awareness training (for users of the system)
 A short session for every account holder when their account is created, repeated yearly:
 * Never share your password; HR will never ask for it. Change a password someone else gave you immediately (the system forces this).
-* Lock or sign out when you leave your desk — the system signs you out after 10 minutes, but a locked screen is instant.
+* Lock or sign out when you leave your desk — the system signs you out after 5 minutes, but a locked screen is instant.
 * Press **Show** only when you need a full number, and never copy government numbers or bank accounts into chat or email; every Show is recorded.
 * Report anything odd — an unknown sign-in, a record changed that you did not change — to HR or the administrator the same day.
 * For HR and admins: review access every quarter (14.5), and treat the payroll anomaly panel as a stop-and-check, not a formality.

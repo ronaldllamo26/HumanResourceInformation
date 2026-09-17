@@ -3,14 +3,11 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Listeners\RecordAuthenticationEvents;
-use App\Models\AuditLog;
 use App\Models\Setting;
 use App\Models\User;
-use App\Services\AuditLogSigner;
+use App\Services\OtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rules\Password;
@@ -24,6 +21,8 @@ use Inertia\Response;
  */
 class SecurityController extends Controller
 {
+    public function __construct(private readonly OtpService $otp) {}
+
     public function index(Request $request): Response
     {
         Gate::authorize('managePersonal', Setting::class);
@@ -52,13 +51,13 @@ class SecurityController extends Controller
                     'created_at' => $token->created_at?->toIso8601String(),
                 ]),
 
-            // Recent activity on this account, so a user can spot what they did
-            // not do. HR sees the whole log.
-            'auditLog' => $canViewAudit
-                ? $this->auditLog($this->auditFilter($request))
-                : [],
-
-            'auditFilter' => $this->auditFilter($request),
+            /*
+             * Whether to offer the link to Audit Logs. The log itself used to
+             * be drawn here — 50 unpaginated rows under somebody's password
+             * form — and it is its own screen under Administration now, with
+             * a date range and pages. This screen keeps the door, not the
+             * window.
+             */
             'canViewAudit' => $canViewAudit,
 
             // Whether the name is theirs to change. Read from the same
@@ -77,7 +76,97 @@ class SecurityController extends Controller
                     : null,
                 'version' => config('privacy.notice_version'),
             ],
+
+            'otp' => [
+                'enabled' => (bool) config('otp.enabled', true),
+                'is_required' => $this->otp->isRequiredFor($user),
+                'otp_email' => $user->otp_email,
+                'otp_enabled' => (bool) ($user->otp_enabled ?? true),
+                'otp_verified' => $user->otp_email_verified_at !== null,
+                'ttl_minutes' => max(1, (int) ceil((int) config('otp.ttl_seconds', 120) / 60)),
+            ],
         ]);
+    }
+
+    public function updateOtpEmail(Request $request): RedirectResponse
+    {
+        Gate::authorize('managePersonal', Setting::class);
+
+        $validated = $request->validate([
+            'password' => ['required', 'current_password'],
+            'otp_email' => ['nullable', 'email:rfc', 'max:180'],
+            'otp_enabled' => ['nullable', 'boolean'],
+        ], [
+            'password.required' => 'Please enter your current password to confirm this security change.',
+            'password.current_password' => 'That is not your current password.',
+        ]);
+
+        $user = $request->user();
+        $hasEnabledInput = array_key_exists('otp_enabled', $validated);
+        $newStatus = $hasEnabledInput ? (bool) $validated['otp_enabled'] : (bool) ($user->otp_enabled ?? true);
+
+        $hasEmailInput = array_key_exists('otp_email', $validated);
+        $address = $hasEmailInput
+            ? (filled($validated['otp_email'] ?? null) ? strtolower(trim($validated['otp_email'])) : null)
+            : $user->otp_email;
+
+        // If enabling, require a valid email address
+        if ($newStatus && blank($address)) {
+            return back()->withErrors([
+                'otp_email' => 'Please provide a valid Gmail address to enable two-factor authentication.',
+            ]);
+        }
+
+        $emailChanged = $address !== $user->otp_email;
+        $statusChanged = $newStatus !== (bool) ($user->otp_enabled ?? true);
+
+        $updates = [];
+        if ($emailChanged) {
+            $updates['otp_email'] = $address;
+            $updates['otp_email_verified_at'] = null;
+        }
+
+        if ($statusChanged || $user->otp_enabled === null) {
+            $updates['otp_enabled'] = $newStatus;
+        }
+
+        if (! empty($updates)) {
+            $this->otp->clear($user);
+            $user->update($updates);
+
+            if ($statusChanged) {
+                $message = $newStatus
+                    ? "Two-Factor Authentication is now enabled. Sign-in codes will be sent to {$user->otp_email}."
+                    : 'Two-Factor Authentication is now disabled. This account will sign in with password only.';
+            } else {
+                $message = $address !== null
+                    ? "Personal email for sign-in codes updated to {$address}."
+                    : 'Personal email for sign-in codes removed.';
+            }
+
+            return back()->with('success', $message);
+        }
+
+        return back();
+    }
+
+    public function sendOtpTest(Request $request): RedirectResponse
+    {
+        Gate::authorize('managePersonal', Setting::class);
+
+        $user = $request->user();
+
+        if (blank($user->otp_email)) {
+            return back()->with('error', 'Connect an email address first before sending a test code.');
+        }
+
+        if (! $this->otp->canResend($user)) {
+            return back()->with('error', 'A code was just sent. Please wait '.$this->otp->secondsUntilResend($user).' second(s).');
+        }
+
+        return $this->otp->send($user)
+            ? back()->with('success', "A sign-in code was sent to {$user->otp_email}. Please check your inbox.")
+            : back()->with('error', 'The code could not be sent. Please check your company mail settings.');
     }
 
     public function updatePassword(Request $request): RedirectResponse
@@ -103,6 +192,9 @@ class SecurityController extends Controller
             'password' => $validated['password'],
             'must_change_password' => false,
         ]);
+
+        // Keep current session authenticated and synchronized with the new password
+        Auth::login($user);
 
         // A token issued while the shared password was live was issued to
         // whoever held that password. Rotating one and leaving the other is
@@ -165,28 +257,6 @@ class SecurityController extends Controller
         return back()->with('success', 'Profile updated.');
     }
 
-    /**
-     * Checks every audit row against its tamper-evidence signature.
-     *
-     * Behind `viewAuditLog`, the same people who read the log. The result is
-     * flashed rather than stored: the point is to look now.
-     */
-    public function verifyAuditLog(AuditLogSigner $signer): RedirectResponse
-    {
-        Gate::authorize('viewAuditLog', Setting::class);
-
-        $result = $signer->verify();
-        $altered = count($result['altered']);
-
-        $summary = "Checked {$result['checked']} audit entries: {$result['valid']} verified";
-        $summary .= $result['unsigned'] > 0 ? ", {$result['unsigned']} unsigned" : '';
-        $summary .= $result['gaps'] > 0 ? ", {$result['gaps']} missing id(s) (a deleted entry, or a cancelled save)" : '';
-
-        return $altered > 0
-            ? back()->with('error', "{$summary}. {$altered} ENTRY(IES) WERE ALTERED — ids ".implode(', ', $result['altered']).'.')
-            : back()->with('success', "{$summary}. No entry has been altered.");
-    }
-
     /** Signs every other session out — the "I lost my laptop" button. */
     public function revokeTokens(Request $request): RedirectResponse
     {
@@ -229,53 +299,5 @@ class SecurityController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
-    }
-
-    /**
-     * Sign-ins and record changes share one table but are read for different
-     * reasons, and there are far more of the former. Unfiltered, a busy
-     * morning's logins would push every edit off the 50-row window — so the
-     * log defaults to changes, and sign-ins are asked for.
-     */
-    private function auditFilter(Request $request): string
-    {
-        $filter = (string) $request->query('audit', 'changes');
-
-        return in_array($filter, ['changes', 'auth', 'all'], true) ? $filter : 'changes';
-    }
-
-    private function auditLog(string $filter): Collection
-    {
-        return AuditLog::with('user:id,name')
-            ->when(
-                $filter === 'auth',
-                fn ($query) => $query->whereIn('event', RecordAuthenticationEvents::EVENTS),
-            )
-            ->when(
-                $filter === 'changes',
-                fn ($query) => $query->whereNotIn('event', RecordAuthenticationEvents::EVENTS),
-            )
-            ->latest('id')
-            ->limit(50)
-            ->get()
-            ->map(fn (AuditLog $entry) => [
-                'id' => $entry->id,
-                'event' => $entry->event,
-                'is_auth' => in_array($entry->event, RecordAuthenticationEvents::EVENTS, true),
-                'subject' => class_basename($entry->auditable_type),
-                'subject_id' => $entry->auditable_id,
-                'user' => $entry->user?->name ?? 'System',
-                // A read has nothing that changed; say what was read and how
-                // instead — "reveal sss_number" is the line worth finding.
-                'changed' => $entry->event === 'accessed'
-                    ? [trim(($entry->new_values['how'] ?? '').' '.($entry->new_values['field'] ?? ''))]
-                    : array_keys($entry->new_values ?? []),
-                // For a failed sign-in this is the whole point of the row: the
-                // account has no id to show when the address is not one of ours.
-                // Rows written before sign-in moved to usernames hold `email`.
-                'attempted_login' => $entry->new_values['username'] ?? $entry->new_values['email'] ?? null,
-                'ip_address' => $entry->ip_address,
-                'created_at' => $entry->created_at?->toIso8601String(),
-            ]);
     }
 }

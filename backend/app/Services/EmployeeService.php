@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\User;
+use App\Notifications\AccountProvisioned;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -179,8 +181,9 @@ class EmployeeService
     private function provisionUserAccount(array $data, string $role): User
     {
         $this->generatedPassword = User::generatePassword();
+        $otpEmail = filled($data['email'] ?? null) ? strtolower(trim($data['email'])) : null;
 
-        return User::create([
+        $user = User::create([
             'name' => trim("{$data['first_name']} {$data['last_name']}"),
             'email' => $data['email'],
             'password' => $this->generatedPassword,
@@ -190,7 +193,18 @@ class EmployeeService
             // it before it is ever used. RequirePasswordChange holds the
             // account on the Security screen until that stops being true.
             'must_change_password' => true,
+            'otp_email' => $otpEmail,
         ]);
+
+        if ($user->otp_email) {
+            try {
+                $user->notify(new AccountProvisioned($this->generatedPassword, $role));
+            } catch (\Throwable $e) {
+                Log::error("Failed to email provisioned credentials for employee user: ".$e->getMessage());
+            }
+        }
+
+        return $user;
     }
 
     private function deletePhoto(Employee $employee): void

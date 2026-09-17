@@ -16,11 +16,29 @@ class EmployeeApiTest extends TestCase
         $user = User::factory()->hrStaff()->create();
 
         $this->postJson('/api/v1/login', [
-            'email' => $user->email,
+            'username' => $user->username,
             'password' => 'password',
         ])
             ->assertOk()
-            ->assertJsonStructure(['token', 'user' => ['id', 'name', 'email', 'role']]);
+            ->assertJsonStructure(['token', 'user' => ['id', 'name', 'username', 'role']]);
+    }
+
+    /** Other ISMERS systems already call this with an email. */
+    public function test_an_email_is_still_accepted_where_the_account_has_one(): void
+    {
+        $user = User::factory()->hrStaff()->create(['email' => 'integration@primepower.com']);
+
+        $this->postJson('/api/v1/login', [
+            'email' => 'integration@primepower.com',
+            'password' => 'password',
+        ])->assertOk()->assertJsonPath('user.id', $user->id);
+    }
+
+    public function test_a_login_needs_a_username_or_an_email(): void
+    {
+        $this->postJson('/api/v1/login', ['password' => 'password'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['username', 'email']);
     }
 
     public function test_invalid_credentials_are_rejected(): void
@@ -28,7 +46,7 @@ class EmployeeApiTest extends TestCase
         $user = User::factory()->create();
 
         $this->postJson('/api/v1/login', [
-            'email' => $user->email,
+            'username' => $user->username,
             'password' => 'wrong-password',
         ])->assertStatus(422);
     }
@@ -38,7 +56,7 @@ class EmployeeApiTest extends TestCase
         $user = User::factory()->inactive()->create();
 
         $this->postJson('/api/v1/login', [
-            'email' => $user->email,
+            'username' => $user->username,
             'password' => 'password',
         ])->assertStatus(422);
     }
@@ -181,7 +199,7 @@ class EmployeeApiTest extends TestCase
     private function tokenFor(User $user): string
     {
         return $this->postJson('/api/v1/login', [
-            'email' => $user->email,
+            'username' => $user->username,
             'password' => 'password',
             'device_name' => 'phpunit',
         ])->assertOk()->json('token');

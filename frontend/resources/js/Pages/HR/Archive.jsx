@@ -75,7 +75,6 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
             <Card>
                 <CardHeader
                     title="Deleted Records"
-                    description="Nothing here was destroyed. Every row can be put back exactly as it was."
                     action={
                         <div className="w-full sm:w-64">
                             <SearchInput

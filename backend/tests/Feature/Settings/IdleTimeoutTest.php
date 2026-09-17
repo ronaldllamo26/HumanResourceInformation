@@ -19,7 +19,7 @@ class IdleTimeoutTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_the_idle_window_is_ten_minutes(): void
+    public function test_the_idle_window_is_five_minutes(): void
     {
         /*
          * Laravel refreshes `last_activity` on every request, so `lifetime` is
@@ -27,7 +27,7 @@ class IdleTimeoutTest extends TestCase
          * one number is the entire enforcement — the browser only counts down
          * to it.
          */
-        $this->assertSame(10, (int) config('session.lifetime'));
+        $this->assertSame(5, (int) config('session.lifetime'));
     }
 
     public function test_signing_out_lands_on_the_login_screen_saying_why(): void
@@ -39,7 +39,7 @@ class IdleTimeoutTest extends TestCase
             ->assertRedirect(route('login'))
             // An unexplained login screen reads as a crash, which is the
             // reaction that gets a timeout switched off.
-            ->assertSessionHas('status', 'You were signed out after 10 minutes of inactivity.');
+            ->assertSessionHas('status', 'You were signed out after 5 minutes of inactivity.');
 
         $this->assertGuest();
     }

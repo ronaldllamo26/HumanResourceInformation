@@ -333,6 +333,18 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
 
                                                             return (
                                                                 <li key={child.id}>
+                                                                    {/* A heading for the children
+                                                                        that follow, so a set with
+                                                                        a different job from the
+                                                                        rest of the dropdown says
+                                                                        so — the four checks read
+                                                                        as four more record
+                                                                        screens without it. */}
+                                                                    {child.divider && (
+                                                                        <p className="mb-1 mt-2.5 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                                                                            {child.divider}
+                                                                        </p>
+                                                                    )}
                                                                     <Link
                                                                         href={child.href}
                                                                         prefetch="hover"

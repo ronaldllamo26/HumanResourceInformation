@@ -23,10 +23,7 @@ export default function Cutoffs({ periods }) {
             breadcrumbs={[...TIMEKEEPING_CRUMBS, { label: 'Cutoff Closing' }]}
         >
             <Card>
-                <CardHeader
-                    title="Payroll periods"
-                    description="Close a period once its time records are checked. Closed days cannot be edited, imported, corrected or have overtime decided — so payroll pays from figures that no longer move."
-                />
+                <CardHeader title="Payroll periods" />
                 <Table>
                     <THead>
                         <TR>

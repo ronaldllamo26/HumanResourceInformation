@@ -232,10 +232,7 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                 out. Clients first, the agency's own overhead last. */}
             {breakdown.length > 1 && (
                 <Card className="mb-5">
-                    <CardHeader
-                        title="Cost by Client"
-                        description="One statutory run, split by who it is billed to."
-                    />
+                    <CardHeader title="Cost by Client" />
                     <Table>
                         <THead>
                             <TR>

@@ -101,6 +101,7 @@ class DocumentScannerTest extends TestCase
             'never_expires',
             'name_on_document', 'name_matches', 'number_matches', 'number_format_ok',
             'expiry', 'name_may_differ', 'registry', 'confidence', 'note',
+            'dl_codes', 'id_validation', 'anomalies',
         ];
 
         foreach (['gemini', 'openrouter', 'anthropic'] as $driver) {
@@ -462,12 +463,15 @@ class DocumentScannerTest extends TestCase
         $this->assertLessThanOrEqual(201, mb_strlen($fields['note']));
     }
 
-    /** A PDF or DOCX upload skips the scanner rather than failing. */
+    /** A DOCX upload skips the scanner; a PDF is now accepted. */
     public function test_a_non_image_is_not_scanned(): void
     {
         $scanner = app(DocumentScanner::class);
 
-        $this->assertFalse($scanner->canScan(UploadedFile::fake()->create('contract.pdf', 200)));
+        // DOCX is still refused — only images and PDFs are accepted.
+        $this->assertFalse($scanner->canScan(UploadedFile::fake()->create('contract.docx', 200)));
+        // PDF is now accepted.
+        $this->assertTrue($scanner->canScan(UploadedFile::fake()->create('contract.pdf', 200)));
         $this->assertTrue($scanner->canScan(UploadedFile::fake()->image('licence.jpg')));
     }
 

@@ -5,6 +5,7 @@ import {
     Database,
     Palette,
     Settings as SettingsIcon,
+    ScrollText,
     Shield,
     Plug,
     Users,
@@ -55,7 +56,20 @@ export const SETTINGS_SECTIONS = [
         label: 'Security',
         href: '/settings/security',
         icon: Shield,
-        blurb: 'Your password, second factor, and API tokens.',
+        // No second factor to mention: both were removed on request, and a
+        // blurb promising one sends somebody looking for a screen that is not
+        // there.
+        blurb: 'Your password, API tokens, and the privacy notice you accepted.',
+    },
+    {
+        label: 'Audit Logs',
+        href: '/settings/audit-logs',
+        icon: ScrollText,
+        // The one section that is neither everybody's nor the administrator's
+        // alone, which is what `roles` exists for: `viewAuditLog` is
+        // `isHrAdmin()`, so HR staff read the log too.
+        roles: ['admin', 'hr_staff'],
+        blurb: 'Who signed in, who changed a record, and who read one.',
     },
     {
         label: 'Data & Backup',
@@ -87,7 +101,15 @@ export const SETTINGS_SECTIONS = [
  * door that vanishes once you walk through it.
  */
 export function visibleSections(role) {
-    return SETTINGS_SECTIONS.filter((section) => !section.admin || role === 'admin');
+    return SETTINGS_SECTIONS.filter((section) => {
+        // `roles` where `admin: true` cannot say it — Audit Logs is HR's as
+        // well, because `viewAuditLog` is `isHrAdmin()`.
+        if (section.roles) {
+            return section.roles.includes(role);
+        }
+
+        return !section.admin || role === 'admin';
+    });
 }
 
 /**

@@ -85,6 +85,14 @@ export default {
                     border: 'hsl(var(--sidebar-border) / var(--border-opacity))',
                 },
 
+                /* The sign-in hero. One look in both modes — see app.css. */
+                hero: {
+                    DEFAULT: token('hero'),
+                    foreground: token('hero-foreground'),
+                    muted: token('hero-muted'),
+                    accent: token('hero-accent'),
+                },
+
                 logo: {
                     primary: token('logo-primary'),
                     subtitle: token('logo-subtitle'),

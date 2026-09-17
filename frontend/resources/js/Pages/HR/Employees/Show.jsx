@@ -6,19 +6,19 @@ import {
     CalendarDays,
     CheckCircle2,
     ChevronRight,
+    ClipboardList,
     Download,
     Eye,
     EyeOff,
     FileText,
-    History,
     Loader2,
     MinusCircle,
     Pencil,
     Plus,
     ScanLine,
     Trash2,
+    TrendingUp,
     TriangleAlert,
-    Wallet,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
@@ -71,6 +71,49 @@ function SectionHeading({ id, title }) {
         >
             {title}
         </h2>
+    );
+}
+
+/**
+ * One of the four record links above the 201 file.
+ *
+ * It replaced three hand-written cards that were identical apart from their
+ * colour — one tinted `info`, one `success`, one `warning` — and the colours
+ * were the reason to rewrite them: **tone is valence in this system**, so
+ * amber means somebody has to act and green means something passed. These are
+ * four links to four screens; none of them is a state, and "My Performance"
+ * drawn in amber read as a problem with the person's performance. They share
+ * one neutral tile that takes the brand accent on hover, so the colour now
+ * says "this is a link" — which is all that is true of it.
+ *
+ * The icon is **the one the sidebar already uses for that destination**. A
+ * screen wearing two different icons in two places is two things to learn
+ * about one screen.
+ */
+function RecordLink({ href, icon: Icon, title, description }) {
+    return (
+        <Link
+            href={href}
+            className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-secondary/40"
+        >
+            <div className="flex items-start justify-between">
+                <span className="grid h-10 w-10 place-items-center rounded-lg bg-secondary text-muted-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <ChevronRight
+                    className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+                    aria-hidden="true"
+                />
+            </div>
+            <div className="mt-3">
+                <h3 className="text-sm font-semibold text-foreground group-hover:text-primary">
+                    {title}
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    {description}
+                </p>
+            </div>
+        </Link>
     );
 }
 
@@ -251,6 +294,43 @@ export default function Show({
     const { auth } = usePage().props;
     const record = employee.data ?? employee;
     const isSelf = isMyProfile || (Boolean(auth?.user?.id) && record.user_id === auth.user.id);
+
+    /*
+     * The four screens that hold this person's own activity, as data rather
+     * than as four near-identical blocks of markup.
+     *
+     * Attendance is back on the list: it was dropped when Time & Attendance
+     * was removed, and the rebuilt Daily Time Records screen is scoped — an
+     * employee opening it sees their own days and nobody else's — so the link
+     * carries the employee and the current month rather than landing on an
+     * unfiltered list somebody then has to narrow by hand.
+     */
+    const recordLinks = [
+        {
+            href: `/hr/timekeeping?employee=${record.id}`,
+            icon: ClipboardList,
+            title: isSelf ? 'My Attendance' : 'Time Records',
+            description: 'Daily punches, lateness, undertime & overtime.',
+        },
+        {
+            href: '/hr/leave',
+            icon: CalendarDays,
+            title: isSelf ? 'My Leave & Absence' : 'Leave Requests',
+            description: 'Filed leave history, balances & approvals.',
+        },
+        {
+            href: '/hr/payroll/payslips',
+            icon: FileText,
+            title: isSelf ? 'My Payslips' : 'Issued Payslips',
+            description: 'Net pay, allowances & statutory deductions.',
+        },
+        {
+            href: `/hr/performance/employees/${record.id}/history`,
+            icon: TrendingUp,
+            title: isSelf ? 'My Performance' : 'Performance History',
+            description: 'Past evaluation cycles, scores & ratings.',
+        },
+    ];
 
     const [uploadOpen, setUploadOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -652,66 +732,10 @@ export default function Show({
                             : 'Employee Records & Activities'
                     }
                 />
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <Link
-                        href="/hr/leave"
-                        className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-all hover:border-info/50 hover:shadow-sm"
-                    >
-                        <div className="flex items-start justify-between">
-                            <span className="group-hover:text-info-foreground grid h-10 w-10 place-items-center rounded-lg bg-info/10 text-info transition-colors group-hover:bg-info">
-                                <CalendarDays className="h-5 w-5" />
-                            </span>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                        </div>
-                        <div className="mt-3">
-                            <h3 className="text-sm font-semibold text-foreground group-hover:text-info">
-                                {isSelf ? 'My Leave & Absence' : 'Leave Requests'}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                Filed leave history, balances & approvals.
-                            </p>
-                        </div>
-                    </Link>
-
-                    <Link
-                        href="/hr/payroll/payslips"
-                        className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-all hover:border-success/50 hover:shadow-sm"
-                    >
-                        <div className="flex items-start justify-between">
-                            <span className="group-hover:text-success-foreground grid h-10 w-10 place-items-center rounded-lg bg-success/10 text-success transition-colors group-hover:bg-success">
-                                <Wallet className="h-5 w-5" />
-                            </span>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                        </div>
-                        <div className="mt-3">
-                            <h3 className="text-sm font-semibold text-foreground group-hover:text-success">
-                                {isSelf ? 'My Payslips' : 'Issued Payslips'}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                Net pay, allowances & statutory deductions.
-                            </p>
-                        </div>
-                    </Link>
-
-                    <Link
-                        href={`/hr/performance/employees/${record.id}/history`}
-                        className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 transition-all hover:border-warning/50 hover:shadow-sm"
-                    >
-                        <div className="flex items-start justify-between">
-                            <span className="grid h-10 w-10 place-items-center rounded-lg bg-warning/10 text-warning transition-colors group-hover:bg-warning group-hover:text-warning-foreground">
-                                <History className="h-5 w-5" />
-                            </span>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                        </div>
-                        <div className="mt-3">
-                            <h3 className="text-sm font-semibold text-foreground group-hover:text-warning">
-                                {isSelf ? 'My Performance' : 'Performance History'}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                Past evaluation cycles, scores & ratings.
-                            </p>
-                        </div>
-                    </Link>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {recordLinks.map((link) => (
+                        <RecordLink key={link.href} {...link} />
+                    ))}
                 </div>
             </section>
 
@@ -780,10 +804,7 @@ export default function Show({
 
                     {can.viewSensitive && (
                         <Card>
-                            <CardHeader
-                                title="Government IDs"
-                                description="Visible to HR and the employee only. Hidden until Show is pressed, and every Show is recorded."
-                            />
+                            <CardHeader title="Government IDs" />
                             <CardBody>
                                 <dl className="grid gap-4 sm:grid-cols-2">
                                     <SensitiveRow
@@ -887,10 +908,7 @@ export default function Show({
                     )}
 
                     <Card>
-                        <CardHeader
-                            title="Driver's License"
-                            description="Structure is checked here; authenticity is checked on LTMS."
-                        />
+                        <CardHeader title="Driver's License" />
                         <CardBody className="space-y-4">
                             <dl className="grid gap-4 sm:grid-cols-2">
                                 <SensitiveRow
@@ -996,10 +1014,7 @@ export default function Show({
                     </Card>
 
                     <Card>
-                        <CardHeader
-                            title="Direct Reports"
-                            description={`${subordinates.length} employee(s) reporting to this person.`}
-                        />
+                        <CardHeader title="Direct Reports" />
                         <CardBody>
                             {subordinates.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">
@@ -1050,7 +1065,6 @@ export default function Show({
                 <Card>
                     <CardHeader
                         title="Documents"
-                        description="Contracts, IDs, clearances, and certificates."
                         action={
                             can.manageDocuments && (
                                 <Button size="sm" onClick={() => setUploadOpen(true)}>
@@ -1382,6 +1396,17 @@ export default function Show({
                                     explains a wrong type, and without it a
                                     misread is a mystery to everybody. */}
                                 <ScanField label="Heading" value={scan.heading} />
+                                {/* Only a licence has these, and for a fleet
+                                    operator they are not paperwork: a DL code
+                                    is the legal ceiling on what somebody may
+                                    be put behind the wheel of. Read off the
+                                    card here and checked against
+                                    config/licenses.php before being shown, so
+                                    a hallucinated code never reaches the
+                                    form. */}
+                                {scan.dl_codes && (
+                                    <ScanField label="DL codes" value={scan.dl_codes} mono />
+                                )}
                                 <ScanField label="Name" value={scan.name_on_document} />
                                 <ScanField label="Number" value={scan.document_number} mono />
                                 <ScanField
@@ -1530,6 +1555,40 @@ export default function Show({
                                                 : 'No parent could be read, so there is nothing to check against.')}
                                     </ScanCheck>
                                 )}
+                                {/* Whether the number is the shape the issuing
+                                    agency really prints. Separate from the
+                                    match above, which asks a different
+                                    question — a number can be well-formed and
+                                    belong to somebody else, or malformed and
+                                    still be the one on file because HR keyed
+                                    it that way. A warning, never a block:
+                                    none of the four agencies publishes a
+                                    check digit, so this catches a typo and
+                                    cannot catch a forgery. */}
+                                {scan.id_validation && (
+                                    <ScanCheck state={scan.id_validation.valid ? 'ok' : 'note'}>
+                                        {scan.id_validation.valid
+                                            ? `Number is the right shape for a ${scan.id_validation.id_type ?? 'government ID'}.`
+                                            : scan.id_validation.warning}
+                                    </ScanCheck>
+                                )}
+
+                                {/* The chronological checks: a future issue
+                                    date, an expiry before the issue, a
+                                    clearance issued before the holder turned
+                                    18, a number already filed under another
+                                    document. Each is the kind of thing a
+                                    person notices on a second glance and
+                                    nobody gets forty second glances — which
+                                    is the whole argument for computing them.
+                                    Listed rather than summed: "3 anomalies"
+                                    is a number nobody can act on. */}
+                                {(scan.anomalies ?? []).map((anomaly) => (
+                                    <ScanCheck key={anomaly} state="note">
+                                        {anomaly}
+                                    </ScanCheck>
+                                ))}
+
                                 <ScanCheck
                                     state={
                                         numberMatch === true

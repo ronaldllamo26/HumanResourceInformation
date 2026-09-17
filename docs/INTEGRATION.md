@@ -30,12 +30,16 @@ Each consuming team gets its own token. Ask Core 2's admin to issue one from
 POST /api/v1/login
 Content-Type: application/json
 
-{ "email": "integration.core3@primepower.test", "password": "…" }
+{ "username": "integration.core3@primepower.com", "password": "…" }
 ```
 
 ```json
-{ "token": "12|abc…", "user": { "id": 4, "role": "hr_staff" } }
+{ "token": "12|abc…", "user": { "id": 4, "username": "integration.core3@primepower.com", "role": "hr_staff" } }
 ```
+
+Login accounts are identified by **username**. `email` is still accepted in
+place of `username` for accounts that have one, so integrations already
+sending an email keep working — but new accounts are created without one.
 
 **The token's role decides what it may see.** Salary, bank details, and
 government numbers are behind `viewSensitive` — a token issued from an

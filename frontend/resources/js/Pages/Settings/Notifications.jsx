@@ -60,10 +60,7 @@ export default function Notifications({ settings }) {
     };
 
     return (
-        <SettingsLayout
-            title="Notifications"
-            description="Which events raise a notification, and how far ahead expiry warnings appear."
-        >
+        <SettingsLayout title="Notifications">
             <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary/40 px-4 py-3">
                 <Info className="mt-0.5 h-4.5 w-4.5 shrink-0 text-primary" aria-hidden="true" />
                 <p className="text-sm text-muted-foreground">
@@ -75,10 +72,7 @@ export default function Notifications({ settings }) {
 
             <form onSubmit={submit} className="space-y-5">
                 <Card>
-                    <CardHeader
-                        title="Events"
-                        description="Turning an event off stops it counting toward the bell."
-                    />
+                    <CardHeader title="Events" />
                     <CardBody className="divide-y divide-border">
                         {EVENTS.map((event) => (
                             <label
@@ -105,10 +99,7 @@ export default function Notifications({ settings }) {
                 </Card>
 
                 <Card>
-                    <CardHeader
-                        title="Expiry Warnings"
-                        description="How much notice you want before a document or licence lapses."
-                    />
+                    <CardHeader title="Expiry Warnings" />
                     <CardBody>
                         <Field
                             label="Lead time (days)"

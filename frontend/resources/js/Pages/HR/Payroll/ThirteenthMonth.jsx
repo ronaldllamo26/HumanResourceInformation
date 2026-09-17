@@ -100,7 +100,6 @@ export default function ThirteenthMonth({ rows, totals, filters, years, deadline
             <Card>
                 <CardHeader
                     title={`${filters.year} 13th-Month Pay`}
-                    description="Basic salary actually earned, less time not worked — allowances, overtime, and night differential are excluded."
                     action={
                         <Select
                             value={String(filters.year)}

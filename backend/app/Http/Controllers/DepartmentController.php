@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Models\Employee;
+use App\Models\Position;
 use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,6 +33,31 @@ class DepartmentController extends Controller
         $search = $request->string('search')->trim()->value();
 
         $departments = Department::withCount(['employees', 'positions'])
+            ->with([
+                'positions' => fn ($query) => $query
+                    ->where('is_active', true)
+                    ->with([
+                        'employees' => fn ($eq) => $eq
+                            ->where('status', 'active')
+                            ->orderBy('last_name')
+                            ->orderBy('first_name')
+                            ->select([
+                                'id', 'employee_number', 'first_name', 'middle_name', 'last_name',
+                                'suffix', 'photo_path', 'position_id', 'department_id',
+                            ]),
+                    ])
+                    ->withCount(['employees' => fn ($eq) => $eq->where('status', 'active')])
+                    ->orderBy('title'),
+                'employees' => fn ($query) => $query
+                    ->where('status', 'active')
+                    ->whereNull('position_id')
+                    ->orderBy('last_name')
+                    ->orderBy('first_name')
+                    ->select([
+                        'id', 'employee_number', 'first_name', 'middle_name', 'last_name',
+                        'suffix', 'photo_path', 'position_id', 'department_id',
+                    ]),
+            ])
             ->search($search)
             ->orderBy('name')
             ->get();
@@ -44,6 +71,27 @@ class DepartmentController extends Controller
                 'is_active' => $department->is_active,
                 'employees_count' => $department->employees_count,
                 'positions_count' => $department->positions_count,
+                'positions' => $department->positions->map(fn ($pos) => [
+                    'id' => $pos->id,
+                    'code' => $pos->code,
+                    'title' => $pos->title,
+                    'salary_grade' => $pos->salary_grade,
+                    'min_salary' => $pos->min_salary ? (float) $pos->min_salary : null,
+                    'max_salary' => $pos->max_salary ? (float) $pos->max_salary : null,
+                    'employees_count' => $pos->employees_count,
+                    'employees' => $pos->employees->map(fn ($emp) => [
+                        'id' => $emp->id,
+                        'employee_number' => $emp->employee_number,
+                        'full_name' => $emp->full_name,
+                        'photo_url' => $emp->photo_path ? asset('storage/'.$emp->photo_path) : null,
+                    ]),
+                ]),
+                'unassigned_employees' => $department->employees->map(fn ($emp) => [
+                    'id' => $emp->id,
+                    'employee_number' => $emp->employee_number,
+                    'full_name' => $emp->full_name,
+                    'photo_url' => $emp->photo_path ? asset('storage/'.$emp->photo_path) : null,
+                ]),
             ]),
             'filters' => ['search' => $search],
             // Counted across the whole table, not the filtered page — a
@@ -51,10 +99,30 @@ class DepartmentController extends Controller
             'summary' => [
                 'total' => Department::count(),
                 'active' => Department::where('is_active', true)->count(),
-                // A department nobody is filed under is either brand new or
-                // left behind; either way it is worth seeing at a glance.
                 'empty' => Department::whereDoesntHave('employees')->count(),
+                'total_positions' => Position::count(),
+                'total_employees' => Employee::where('status', 'active')->count(),
             ],
+            'departmentOptions' => Department::where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn ($d) => ['value' => $d->id, 'label' => $d->name]),
+            'moveTargets' => Position::with('department:id,name')
+                ->withCount(['employees' => fn ($q) => $q->where('status', 'active')])
+                ->where('is_active', true)
+                ->orderBy('title')
+                ->get()
+                ->map(fn ($pos) => [
+                    'value' => $pos->id,
+                    'title' => $pos->title,
+                    'code' => $pos->code,
+                    'department' => $pos->department?->name,
+                    'department_id' => $pos->department_id,
+                    'salary_grade' => $pos->salary_grade,
+                    'min_salary' => $pos->min_salary ? (float) $pos->min_salary : null,
+                    'max_salary' => $pos->max_salary ? (float) $pos->max_salary : null,
+                    'employees_count' => $pos->employees_count,
+                ]),
         ]);
     }
 

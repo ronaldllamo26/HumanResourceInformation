@@ -646,7 +646,6 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
             <Card className="mb-5">
                 <CardHeader
                     title="Clients"
-                    description="The companies PrimePower deploys employees to. Open one to see its terms and who is on site."
                     action={
                         <Button onClick={open}>
                             <Plus className="h-4 w-4" />

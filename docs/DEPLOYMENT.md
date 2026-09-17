@@ -36,7 +36,7 @@ Set these in the Hostforge panel's environment variables:
 the container log.** With `RUN_MIGRATIONS=true`, `start.sh` migrates and then
 runs `php artisan hris:seed-if-empty`, which seeds only a database with no
 accounts. Open the deployment's logs straight after the first successful
-deploy and copy the block headed *Seeded logins* — `admin@primepower.test` and
+deploy and copy the block headed *Seeded logins* — `admin@primepower.com` and
 the others, each with a generated password that must be changed at first
 sign-in. A later restart finds the accounts and seeds nothing, so nobody's
 chosen password is reset.
@@ -46,7 +46,7 @@ terminal and no emailed reset, so set it from the panel instead:
 
 1. Add `HRIS_ADMIN_PASSWORD` with a temporary password of at least 8
    characters, and redeploy (or restart).
-2. Sign in as `admin@primepower.test` with it. You are asked to choose a new
+2. Sign in as `admin@primepower.com` with it. You are asked to choose a new
    password straight away.
 3. Remove `HRIS_ADMIN_PASSWORD` from the panel.
 

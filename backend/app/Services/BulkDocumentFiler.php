@@ -236,6 +236,37 @@ class BulkDocumentFiler
             $held[] = 'This document has already expired.';
         }
 
+        /*
+         * Anything the chronological checks flagged — a future issue date, an
+         * expiry before the issue, a clearance issued before the holder turned
+         * 18, a number already filed under another document.
+         *
+         * These are *warnings* on the upload form, where a person reads them
+         * and decides. Here there is no person, and every one of them is a
+         * reading that disagrees with itself: filing it automatically would
+         * store the disagreement as a fact. Held with the reason quoted, so
+         * the review table says what the scanner noticed rather than only
+         * that it stopped.
+         */
+        if ($rules['hold_anomalies'] && ($reading['anomalies'] ?? []) !== []) {
+            foreach ($reading['anomalies'] as $anomaly) {
+                $held[] = $anomaly;
+            }
+        }
+
+        /*
+         * A government ID number that is not the shape its agency prints.
+         *
+         * A warning on the form for the same reason the expiry is — HR keys
+         * real numbers that fail a format rule, and refusing them would leave
+         * the 201 file emptier than the truth. Unattended it is a different
+         * question: nobody has looked at the card, and a malformed number is
+         * as likely to be a misread digit as a real one.
+         */
+        if ($rules['hold_failed_id_check'] && ($reading['id_validation']['valid'] ?? true) === false) {
+            $held[] = $reading['id_validation']['warning'] ?? 'The ID number is not the shape this agency prints.';
+        }
+
         return ['auto' => $held === [], 'held_for' => $held];
     }
 

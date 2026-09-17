@@ -12,6 +12,7 @@ import {
     FilePenLine,
     Database,
     DoorOpen,
+    FileSpreadsheet,
     FileText,
     FileWarning,
     HandCoins,
@@ -21,10 +22,12 @@ import {
     LayoutDashboard,
     ListChecks,
     Lock,
+    Network,
     Palette,
     Plug,
     Receipt,
     ScanLine,
+    ScrollText,
     Settings,
     Shield,
     ShieldAlert,
@@ -66,12 +69,6 @@ export const NAV_GROUPS = [
                 icon: IdCard,
                 children: [
                     {
-                        id: 'employee-list',
-                        label: 'Employee Directory',
-                        icon: Users,
-                        href: '/hr/employees',
-                    },
-                    {
                         /*
                          * The signed-in user's own 201 file and personal records.
                          */
@@ -102,44 +99,18 @@ export const NAV_GROUPS = [
                         badgeKey: 'pendingEndorsements',
                     },
                     {
-                        /*
-                         * Who works here, arranged the way the company is —
-                         * a colleague's screen rather than HR's record. It
-                         * carries no `roles`, and that is deliberate: the
-                         * fields narrow to a name, a job, a posting, and a
-                         * work contact, which is what makes it safe for
-                         * everybody. See EmployeePolicy::viewDirectory.
-                         */
-                        id: 'employee-directory',
-                        label: 'Departments',
-                        icon: Building2,
-                        href: '/hr/directory',
+                        id: 'employee-list',
+                        label: 'Employee Directory',
+                        icon: Users,
+                        href: '/hr/employees',
                     },
-                    /*
-                     * The master-data Departments screen has left this list.
-                     *
-                     * Two entries called "Departments" would have been two
-                     * answers to one word, and the one people actually open is
-                     * the screen above — which walks the org chart and holds
-                     * the people. Editing a department is a rarer act than
-                     * reading one, and it did not earn a permanent line here.
-                     *
-                     * The route is untouched: `/hr/departments` still works,
-                     * `/settings/organization` still redirects to it, and
-                     * Positions still files against what it maintains. Only
-                     * the nav entry is gone, so restoring it is one object.
-                     *
-                     * `ALL_HREFS` is derived from this list, so `bestMatch()`
-                     * now finds nothing on `/hr/departments` — correct, in the
-                     * same way it finds nothing on a settings page: there is
-                     * no entry for it to light.
-                     */
                     {
-                        id: 'employee-positions',
-                        label: 'Positions',
-                        icon: Briefcase,
-                        href: '/hr/positions',
+                        id: 'employee-departments-positions',
+                        label: 'Organization Chart',
+                        icon: Network,
+                        href: '/hr/departments',
                         roles: ['admin', 'hr_staff'],
+                        activePrefixes: ['/hr/departments', '/hr/positions', '/hr/directory'],
                     },
                     /*
                      * Clients, back where Positions leaves off.
@@ -160,71 +131,44 @@ export const NAV_GROUPS = [
                         href: '/hr/clients',
                         roles: ['admin', 'hr_staff'],
                     },
-                ],
-            },
-            {
-                /*
-                 * The four screens that *judge* the 201 file rather than hold
-                 * it, under one entry beside the module they read.
-                 *
-                 * Loose in Employee Information they read as four more record
-                 * screens, which is the wrong claim about all four: none of
-                 * them stores anything, and each answers a question the file
-                 * itself does not — what is lapsing (`CredentialExpiryScanner`),
-                 * what was never filed (`OnboardingChecker`), where the records
-                 * disagree (`RecordIntegrityChecker`), and whether the person
-                 * can be sent to a client tomorrow (`DeploymentReadinessChecker`,
-                 * which composes the first two).
-                 *
-                 * A sibling entry rather than a nesting, because the sidebar
-                 * renders exactly two levels — group and children — and this is
-                 * the same shape Timekeeping and Leave already take inside Time
-                 * & Attendance.
-                 *
-                 * Named for what they do, not for how they do it. They spent a
-                 * while under "AI & Analytics" and not one of them calls a
-                 * model — they are config-driven rule engines over dates,
-                 * regexes and string comparisons, and Record Checks says so in
-                 * its own docblock, deliberately. "Compliance" was the obvious
-                 * alternative and is taken: in this system it means SSS, BIR
-                 * and PhilHealth remittance, under Payroll.
-                 */
-                id: 'employee-checks',
-                label: 'Checks & Readiness',
-                icon: ShieldCheck,
-                children: [
-                    {
-                        id: 'employee-credentials',
-                        label: 'Credentials',
-                        icon: ShieldAlert,
-                        href: '/hr/credentials',
-                    },
-                    {
-                        id: 'employee-onboarding',
-                        label: '201 File Status',
-                        icon: FileWarning,
-                        href: '/hr/onboarding',
-                    },
+
+                    /*
+                     * The four screens that *judge* the 201 file rather than
+                     * hold it — and this is the third arrangement they have
+                     * had, asked for by the owner.
+                     *
+                     * They were loose in this list once, then pulled out into
+                     * a sibling entry called `Checks & Readiness`, because
+                     * loose they read as four more record screens — which is
+                     * the wrong claim about all four: none of them stores
+                     * anything, and each answers a question the file itself
+                     * does not. What that argument was really against was the
+                     * *lack of a label*, not the nesting: these are reached
+                     * from a person's record, and a reader looking for "is
+                     * this driver's licence lapsing" opens Employee
+                     * Information first.
+                     *
+                     * So they are children again, with `divider` carrying the
+                     * heading the sibling entry used to be. The objection is
+                     * answered rather than overruled — the four still say what
+                     * they are, and they no longer cost a second top-level row
+                     * to say it.
+                     *
+                     * Named for what they do, not how: they spent a while
+                     * under "AI & Analytics" and not one of them calls a model
+                     * — they are config-driven rule engines over dates,
+                     * regexes and string comparisons, and `RecordIntegrityChecker`
+                     * says so in its own docblock. "Compliance" was the
+                     * obvious alternative and is taken: here it means SSS, BIR
+                     * and PhilHealth remittance, under Payroll.
+                     */
                     {
                         /*
-                         * Where the records disagree with each other. Open to
-                         * the same roles as the directory it reads — a
-                         * supervisor sees the findings on their own reports.
-                         */
-                        id: 'employee-record-checks',
-                        label: 'Record Checks',
-                        icon: ListChecks,
-                        href: '/hr/record-checks',
-                    },
-                    {
-                        /*
-                         * Last, because it is the verdict the three above feed:
-                         * it re-uses the credential and onboarding scanners
-                         * rather than re-deriving either, so the four screens
-                         * cannot disagree about the same driver.
+                         * Unified monitor for deployability, 201 file completeness,
+                         * and credential/licence validity across the workforce.
                          */
                         id: 'employee-deployment',
-                        label: 'Deployment Readiness',
+                        label: 'Checks & Readiness',
                         icon: BadgeCheck,
                         href: '/hr/deployment',
                     },
@@ -232,6 +176,8 @@ export const NAV_GROUPS = [
             },
         ],
     },
+
+
     {
         label: 'Time & Attendance',
         items: [
@@ -419,6 +365,13 @@ export const NAV_GROUPS = [
         label: 'AI & Analytics',
         items: [
             {
+                id: 'reports',
+                label: 'Reports',
+                icon: FileSpreadsheet,
+                href: '/hr/reports',
+                roles: ['admin', 'hr_staff'],
+            },
+            {
                 id: 'analytics-workforce',
                 label: 'Workforce Analytics',
                 icon: TrendingUp,
@@ -470,6 +423,35 @@ export const NAV_GROUPS = [
         label: 'Administration',
         items: [
             {
+                /*
+                 * Was reachable only as a Settings section, which filed "who
+                 * may open a 201 file" behind the same door as the company's
+                 * date format. It is the access-control screen *and* the
+                 * access review, so it belongs under the heading that says
+                 * administration. It stays a Settings section too — the same
+                 * two-doors arrangement the topbar gear and this group
+                 * already have for Settings itself.
+                 */
+                id: 'users',
+                label: 'Users & Access',
+                icon: Users,
+                href: '/settings/users',
+                roles: ['admin'],
+            },
+            {
+                /*
+                 * The audit trail, out of the bottom of Settings → Security
+                 * and onto its own screen. Carries two roles where Users &
+                 * Access carries one: `viewAuditLog` is `isHrAdmin()`, and
+                 * reading the log is not the same act as handing out access.
+                 */
+                id: 'audit-logs',
+                label: 'Audit Logs',
+                icon: ScrollText,
+                href: '/settings/audit-logs',
+                roles: ['admin', 'hr_staff'],
+            },
+            {
                 id: 'system-settings',
                 label: 'System Settings',
                 icon: Settings,
@@ -515,6 +497,7 @@ const ALL_HREFS = NAV_GROUPS.flatMap((group) =>
     group.items.flatMap((item) => [
         ...(item.href ? [item.href] : []),
         ...(item.children ?? []).map((child) => child.href),
+        ...(item.activePrefixes ?? []),
     ]),
 ).sort((a, b) => b.length - a.length);
 
@@ -541,13 +524,33 @@ export function isItemActive(item, currentUrl) {
     // in) rather than as `children` here — the entry still has to read as
     // current from any page under it, not just the one it happens to link
     // to.
+    /*
+     * ...but only while no other entry owns the URL outright. `/settings` is
+     * System Settings' prefix and `/settings/users` is Users & Access's own
+     * href, so without this both rows light up on that page — and two current
+     * rows tell the reader neither.
+     */
     if (item.activePrefix && pathOf(currentUrl).startsWith(item.activePrefix)) {
-        return true;
+        const owner = bestMatch(currentUrl);
+
+        return owner === null || owner === item.href;
+    }
+
+    if (item.activePrefixes && item.activePrefixes.some((prefix) => pathOf(currentUrl).startsWith(prefix))) {
+        const owner = bestMatch(currentUrl);
+
+        return owner === null || owner === item.href || item.activePrefixes.includes(owner);
     }
 
     return (item.children ?? []).some((child) => isHrefActive(child.href, currentUrl));
 }
 
+/**
+ * A `divider` belongs to the run of children after it, not to the one child
+ * that happens to carry it: when role filtering removes that child, the heading
+ * moves to the next survivor rather than disappearing with it. A set of screens
+ * that silently loses its label for one role is the bug this guards against.
+ */
 export function visibleGroups(groups, role) {
     const allowed = (entry) => !entry.roles || entry.roles.includes(role);
 
@@ -556,10 +559,28 @@ export function visibleGroups(groups, role) {
             ...group,
             items: group.items
                 .filter(allowed)
-                .map((item) => ({
-                    ...item,
-                    children: item.children?.filter(allowed),
-                }))
+                .map((item) => {
+                    if (!item.children) return item;
+
+                    // The dropped children are read before they go, so a
+                    // heading on one of them survives onto the next.
+                    let pending = null;
+                    const kept = [];
+
+                    for (const child of item.children) {
+                        if (!allowed(child)) {
+                            pending = pending ?? child.divider ?? null;
+                            continue;
+                        }
+
+                        kept.push(
+                            pending && !child.divider ? { ...child, divider: pending } : child,
+                        );
+                        pending = null;
+                    }
+
+                    return { ...item, children: kept };
+                })
                 // A parent whose children are all hidden has nothing to show.
                 .filter((item) => item.href || (item.children?.length ?? 0) > 0),
         }))

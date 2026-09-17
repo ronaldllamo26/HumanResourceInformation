@@ -92,7 +92,6 @@ export default function Compensation({ allowances, loans, employees, frequencies
             <Card className="mb-5">
                 <CardHeader
                     title="Recurring Allowances"
-                    description="Added to gross pay every run. Non-taxable allowances are excluded from withholding tax."
                     action={
                         <Button size="sm" onClick={() => setAllowanceOpen(true)}>
                             <Plus className="h-4 w-4" />
@@ -183,7 +182,6 @@ export default function Compensation({ allowances, loans, employees, frequencies
             <Card>
                 <CardHeader
                     title="Loans & Advances"
-                    description="Amortisations are withheld each run and applied to the balance when the run is approved."
                     action={
                         <Button size="sm" onClick={() => setLoanOpen(true)}>
                             <Plus className="h-4 w-4" />

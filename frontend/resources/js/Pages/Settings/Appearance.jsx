@@ -59,15 +59,9 @@ export default function Appearance({ brand }) {
     };
 
     return (
-        <SettingsLayout
-            title="Appearance"
-            description="How the interface looks on this device. These preferences are not shared with your other devices."
-        >
+        <SettingsLayout title="Appearance">
             <Card>
-                <CardHeader
-                    title="Theme"
-                    description={`Currently showing the ${theme} palette.`}
-                />
+                <CardHeader title="Theme" />
                 <CardBody className="grid gap-3 sm:grid-cols-3">
                     {THEMES.map((option) => {
                         const Icon = option.icon;
@@ -119,10 +113,7 @@ export default function Appearance({ brand }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Navigation"
-                    description="How the sidebar behaves when a page loads."
-                />
+                <CardHeader title="Navigation" />
                 <CardBody>
                     <label className="flex items-start gap-3">
                         <input
@@ -145,10 +136,7 @@ export default function Appearance({ brand }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Preview"
-                    description="How your brand reads in the current theme."
-                />
+                <CardHeader title="Preview" />
                 <CardBody>
                     <div className="flex items-center gap-3 rounded-lg border border-border bg-sidebar p-4">
                         <LogoMark />

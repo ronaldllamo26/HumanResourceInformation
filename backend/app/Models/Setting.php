@@ -86,6 +86,19 @@ class Setting extends Model
     }
 
     /** Only the keys in a namespace, e.g. `company`. */
+    /**
+     * Forgets the cached map.
+     *
+     * `setMany()` already does this for its own writes; this is for the one
+     * caller that empties the rows underneath it rather than changing them
+     * (`hris:reset-demo-data`), which would otherwise keep reading a map of
+     * settings that no longer exist until the cache was cleared by hand.
+     */
+    public static function flushCache(): void
+    {
+        Cache::forget(self::CACHE_KEY);
+    }
+
     public static function group(string $prefix): array
     {
         $settings = self::all();

@@ -64,4 +64,19 @@ class SettingPolicy
     {
         return $user->isHrAdmin();
     }
+
+    /**
+     * Building and downloading a report.
+     *
+     * HR and admin only, with no supervisor exemption. A report is many
+     * people's records in one file that then lives in somebody's downloads
+     * folder — `EmployeePolicy::view` narrows a supervisor to their own team
+     * for exactly that class of data, and a report cannot be narrowed that way
+     * without becoming a different report. A supervisor who needs their team's
+     * attendance reads it on the Daily Time Records screen, which is scoped.
+     */
+    public function viewReports(User $user): bool
+    {
+        return $user->isHrAdmin();
+    }
 }

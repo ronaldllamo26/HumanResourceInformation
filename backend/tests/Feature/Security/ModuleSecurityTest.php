@@ -270,15 +270,15 @@ class ModuleSecurityTest extends TestCase
         $this->artisan('audit:verify')->assertFailed();
     }
 
-    public function test_hr_can_run_the_integrity_check_from_settings(): void
+    public function test_hr_can_run_the_integrity_check_from_the_audit_log(): void
     {
         $hr = User::factory()->hrStaff()->create();
 
-        $this->actingAs($hr)->post(route('settings.security.audit.verify'))
+        $this->actingAs($hr)->post(route('settings.audit-logs.verify'))
             ->assertSessionHas('success', fn ($message) => str_contains($message, 'No entry has been altered'));
 
         $employeeUser = User::factory()->create();
-        $this->actingAs($employeeUser)->post(route('settings.security.audit.verify'))->assertForbidden();
+        $this->actingAs($employeeUser)->post(route('settings.audit-logs.verify'))->assertForbidden();
     }
 
     // --- Access review -------------------------------------------------------

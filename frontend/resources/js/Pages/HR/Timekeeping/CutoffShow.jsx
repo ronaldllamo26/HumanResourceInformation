@@ -128,10 +128,7 @@ export default function CutoffShow({ period, cutoff, outstanding, rows, can, err
             )}
 
             <Card>
-                <CardHeader
-                    title="What payroll will read"
-                    description="Each employee's totals for the period. Absences already covered by approved leave are not counted; overtime is approved requests only."
-                />
+                <CardHeader title="What payroll will read" />
                 <Table>
                     <THead>
                         <TR>

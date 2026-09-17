@@ -1,10 +1,12 @@
 import { Link } from '@inertiajs/react';
 import {
+    BellRing,
     Building2,
     CalendarClock,
     CalendarDays,
     ChevronRight,
     ClipboardCheck,
+    ClipboardList,
     IdCard,
     Shield,
     UserPlus,
@@ -212,6 +214,8 @@ export default function Dashboard({
     statusMix,
     recentHires,
     approvals,
+    attendanceToday,
+    needsAction,
     payroll,
     leaveToday,
     leaveSummary,
@@ -221,6 +225,14 @@ export default function Dashboard({
     can,
 }) {
     const headcountChange = statistics.headcount_change ?? 0;
+
+    /*
+     * Today, for the two attendance links. Read off the figure the server
+     * counted with rather than from the browser clock: a machine whose
+     * timezone is not Manila would otherwise open a list for a different day
+     * than the tile counted.
+     */
+    const today = attendanceToday.date;
 
     /*
      * The Leave card counts what was filed this month, so every one of its
@@ -243,7 +255,7 @@ export default function Dashboard({
             <ProfileCard profile={profile} />
 
             {/* Headline figures */}
-            <div className="mb-5 grid gap-5 sm:grid-cols-3">
+            <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {/* Each tile links to the screen its figure came from, so a
                     number that raises a question is one click from its
                     answer. */}
@@ -277,6 +289,36 @@ export default function Dashboard({
                     tone="info"
                     hint={leaveToday.count > 0 ? leaveToday.summary : 'Nobody is away'}
                 />
+                {/*
+                    In today, out of who was expected — the figure the rebuilt
+                    Time & Attendance made available again, and the one a
+                    supervisor opens the dashboard for. It counts the three
+                    worked statuses (a day somebody was late for is still a day
+                    they were there), and the sub-line names what is *not* yet
+                    keyed rather than calling it an absence.
+                */}
+                <StatCard
+                    floating
+                    href={`/hr/timekeeping?from=${today}&to=${today}`}
+                    label="In Today"
+                    value={`${attendanceToday.present}/${attendanceToday.expected}`}
+                    icon={ClipboardList}
+                    tone={attendanceToday.present > 0 ? 'success' : 'muted'}
+                    hint={
+                        attendanceToday.unrecorded > 0
+                            ? `${attendanceToday.unrecorded} not keyed yet · as of ${attendanceToday.as_of}`
+                            : `Every day keyed · as of ${attendanceToday.as_of}`
+                    }
+                    trend={
+                        attendanceToday.change === 0
+                            ? undefined
+                            : {
+                                  direction: attendanceToday.change > 0 ? 'up' : 'down',
+                                  label: `${attendanceToday.change > 0 ? '+' : ''}${attendanceToday.change} vs yesterday`,
+                              }
+                    }
+                />
+
                 <StatCard
                     floating
                     href="/hr/payroll"
@@ -296,9 +338,29 @@ export default function Dashboard({
             </div>
 
             {/* Operational detail */}
-            <div className="mb-5 grid gap-5 sm:grid-cols-2">
+            <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {/* The bar takes the band's own colour, so the meter and the
                     badge cannot disagree about how the score reads. */}
+                {/*
+                    Today's three answers, each linking to the rows it counted.
+                    Late is amber because somebody has to do something about a
+                    pattern of it; absent is red because it is unpaid and may
+                    be a disciplinary matter; present is green and drops to
+                    grey at zero like every other count here.
+                */}
+                <SplitStatCard
+                    floating
+                    href={`/hr/timekeeping?from=${today}&to=${today}`}
+                    label="Attendance Today"
+                    icon={ClipboardList}
+                    tone={attendanceToday.absent > 0 ? 'warning' : 'success'}
+                    stats={[
+                        { label: 'Present', value: attendanceToday.present, tone: 'success' },
+                        { label: 'Late', value: attendanceToday.late, tone: 'warning' },
+                        { label: 'Absent', value: attendanceToday.absent, tone: 'destructive' },
+                    ]}
+                />
+
                 <MeterCard
                     floating
                     href="/hr/performance"
@@ -326,9 +388,67 @@ export default function Dashboard({
                     tone="warning"
                     stats={[
                         { label: 'Leave', value: approvals.leave, tone: 'warning' },
-                        { label: 'Reviews', value: approvals.reviews, tone: 'warning' },
+                        { label: 'Overtime', value: approvals.overtime ?? 0, tone: 'warning' },
+                        {
+                            label: 'Corrections',
+                            value: approvals.corrections ?? 0,
+                            tone: 'warning',
+                        },
                     ]}
                 />
+
+                {/*
+                    Nobody's queue, and still somebody's problem: a lapsed
+                    licence, a day with no time-out, a client who has not
+                    confirmed. The headline names the most urgent in words,
+                    because three numbers are three questions and the reader
+                    wants "what first" answered. The whole card drops to grey
+                    when all three are zero — "0 blocked" in red reads as a
+                    problem when it is the opposite.
+                */}
+                <Card floating className="flex flex-col justify-between p-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Needs Action
+                        </p>
+                        <span
+                            className={cn(
+                                'grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+                                needsAction.headline
+                                    ? 'bg-warning/10 text-warning'
+                                    : 'bg-muted text-muted-foreground',
+                            )}
+                        >
+                            <BellRing className="h-4 w-4" aria-hidden="true" />
+                        </span>
+                    </div>
+
+                    <div className="mt-3 flex gap-2">
+                        <StatTile
+                            label="Credentials"
+                            value={needsAction.credentials}
+                            tone={needsAction.credentials > 0 ? 'destructive' : 'muted'}
+                            href="/hr/credentials"
+                        />
+                        <StatTile
+                            label="No time-out"
+                            value={needsAction.incomplete}
+                            tone={needsAction.incomplete > 0 ? 'warning' : 'muted'}
+                            href="/hr/timekeeping?status=incomplete"
+                        />
+                        <StatTile
+                            label="Timesheets"
+                            value={needsAction.timesheets}
+                            tone={needsAction.timesheets > 0 ? 'warning' : 'muted'}
+                            href="/hr/timekeeping/client-timesheets"
+                        />
+                    </div>
+
+                    <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+                        {needsAction.headline ??
+                            'Nothing waiting — credentials, time records and client timesheets are all clear.'}
+                    </p>
+                </Card>
             </div>
 
             {/* Charts */}
@@ -336,7 +456,6 @@ export default function Dashboard({
                 <Card floating className="lg:col-span-2">
                     <CardHeader
                         title="Headcount Trend"
-                        description="Active employees at each month end."
                         action={
                             trendDelta(headcountTrend) === null ? undefined : (
                                 <Badge
@@ -360,7 +479,6 @@ export default function Dashboard({
                 <Card floating>
                     <CardHeader
                         title="Employment Status"
-                        description="Across all records."
                         action={
                             <div className="text-right">
                                 <p className="text-xl font-semibold tabular-nums leading-none text-foreground">
@@ -390,7 +508,6 @@ export default function Dashboard({
                     <Card floating className="lg:col-span-1">
                         <CardHeader
                             title="Leave Requests"
-                            description="Filed this month."
                             action={
                                 <Link
                                     href="/hr/leave"
@@ -453,7 +570,6 @@ export default function Dashboard({
                     <Card floating>
                         <CardHeader
                             title="Payroll"
-                            description="Runs by stage."
                             action={
                                 <Link
                                     href="/hr/payroll"
@@ -514,7 +630,6 @@ export default function Dashboard({
                 <Card floating>
                     <CardHeader
                         title="201 File Health"
-                        description="What needs filing."
                         action={
                             <Link
                                 href="/hr/onboarding"
@@ -582,7 +697,6 @@ export default function Dashboard({
                 <Card floating>
                     <CardHeader
                         title="Active Headcount by Department"
-                        description="Employees with an active record."
                         action={
                             <Link
                                 href="/hr/departments"
@@ -602,7 +716,6 @@ export default function Dashboard({
             <Card floating>
                 <CardHeader
                     title="Recent Hires"
-                    description="The six most recently hired."
                     action={
                         <Link
                             href="/hr/employees"
@@ -696,7 +809,18 @@ function ProfileCard({ profile }) {
     const links = employee
         ? [
               { label: 'My 201 File', href: `/hr/employees/${employee.id}`, icon: IdCard },
-
+              /*
+               * Attendance is back: the link was dropped when Time &
+               * Attendance was removed, and the rebuilt Daily Time Records
+               * screen is scoped — an employee opening it sees their own days
+               * — so it carries the employee rather than landing on a list
+               * they would have to narrow by hand.
+               */
+              {
+                  label: 'My Attendance',
+                  href: `/hr/timekeeping?employee=${employee.id}`,
+                  icon: ClipboardList,
+              },
               { label: 'My Leave', href: '/hr/leave', icon: CalendarDays },
               { label: 'My Payslips', href: '/hr/payroll/payslips', icon: Wallet },
           ]

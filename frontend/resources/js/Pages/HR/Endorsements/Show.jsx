@@ -283,10 +283,7 @@ export default function Show({ endorsement, fullName, missing, can }) {
                 {/* --- What this system still has to decide --- */}
                 {endorsement.status === 'pending' && (
                     <Card floating className="h-fit">
-                        <CardHeader
-                            title="Still needed here"
-                            description="Core 1 cannot decide these"
-                        />
+                        <CardHeader title="Still needed here" />
                         <CardBody>
                             <ul className="space-y-2.5">
                                 {missing.map((item) => (

@@ -8,11 +8,14 @@ use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\Setting;
 use App\Models\User;
+use App\Notifications\AccountProvisioned;
+use App\Services\OtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -31,6 +34,8 @@ class UserAccessController extends Controller
     /** How often access should be reviewed — quarterly. */
     private const REVIEW_EVERY_DAYS = 90;
 
+    public function __construct(private readonly OtpService $otp) {}
+
     public function index(Request $request): Response
     {
         Gate::authorize('manageUsers', Setting::class);
@@ -39,7 +44,7 @@ class UserAccessController extends Controller
         $staleBefore = now()->subDays(self::STALE_AFTER_DAYS);
 
         return Inertia::render('Settings/Users', [
-            'users' => User::with('employee:id,user_id,employee_number')
+            'users' => User::with('employee:id,user_id,employee_number,first_name,middle_name,last_name,suffix')
                 ->orderBy('name')
                 ->get()
                 ->map(fn (User $user) => [
@@ -55,10 +60,22 @@ class UserAccessController extends Controller
                     'name' => $user->name,
                     // What the person signs in with, so the admin can tell them.
                     'username' => $user->username,
-                    'email' => $user->email,
                     'role' => $user->role,
                     'is_active' => (bool) $user->is_active,
                     'employee_number' => $user->employee?->employee_number,
+                    // Offered in the edit form, and compared with after the
+                    // save: `users.name` and the 201 file are meant to name
+                    // one person and nothing here reconciles them.
+                    'employee_name' => $user->employee?->full_name,
+                    /*
+                     * The personal inbox sign-in codes go to. Shown in full
+                     * rather than masked: the administrator is the person who
+                     * has to notice a typo in it, and a masked address is one
+                     * nobody can check. It is a work contact's own address,
+                     * not a government number.
+                     */
+                    'otp_email' => $user->otp_email,
+                    'otp_verified' => $user->otp_email_verified_at !== null,
                     'has_employee_record' => $user->employee !== null,
                     'is_self' => $user->id === $request->user()->id,
                     'tokens' => $user->tokens()->count(),
@@ -72,18 +89,29 @@ class UserAccessController extends Controller
                 ['value' => User::ROLE_EMPLOYEE, 'label' => 'Employee', 'description' => 'Own record, payslips, and filings only.'],
             ],
 
+            /*
+             * Whether the factor is switched on at all, so the screen can say
+             * "connected, but the switch is off" rather than implying a code
+             * will be asked for when it will not.
+             */
+            'otp' => [
+                'enabled' => (bool) config('otp.enabled', true),
+                'ttl_minutes' => max(1, (int) ceil((int) config('otp.ttl_seconds', 120) / 60)),
+            ],
+
             'accessReview' => $this->lastAccessReview(),
             'staleAfterDays' => self::STALE_AFTER_DAYS,
 
             // Employees who could be given a login but do not have one yet.
             'unlinkedEmployees' => Employee::whereNull('user_id')
-                ->whereNotNull('email')
                 ->orderBy('last_name')
                 ->get(['id', 'first_name', 'middle_name', 'last_name', 'suffix', 'email'])
                 ->map(fn (Employee $employee) => [
                     'id' => $employee->id,
                     'full_name' => $employee->full_name,
                     'email' => $employee->email,
+                    // Suggested, not assigned: the admin may type another.
+                    'username' => User::usernameFor($employee->first_name, $employee->last_name),
                 ]),
         ]);
     }
@@ -129,33 +157,182 @@ class UserAccessController extends Controller
     {
         Gate::authorize('manageUsers', Setting::class);
 
+        // `nina` and `nina@primepower.com` are the same username.
+        if (filled($request->input('username'))) {
+            $request->merge(['username' => User::withDomain($request->input('username'))]);
+        }
+
         $validated = $request->validate([
             'employee_id' => ['nullable', 'exists:employees,id'],
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            // Optional: left blank, one is made from the name.
+            'username' => ['nullable', 'string', 'max:50', 'regex:/^[a-z0-9._-]{2,}@[a-z0-9.-]+\.[a-z]{2,}$/', 'unique:users,username'],
+            'otp_email' => ['nullable', 'email:rfc', 'max:180'],
             'role' => ['required', Rule::in(User::ROLES)],
+        ], [
+            'username.regex' => 'Use a name like nina@primepower.com — lowercase letters, numbers, dots, dashes or underscores.',
+            'otp_email.email' => 'Enter a valid email address (e.g. employee@gmail.com).',
         ]);
 
         // Handed to the administrator once; the account holder changes it after.
         $password = User::generatePassword();
+        $address = filled($validated['otp_email'] ?? null) ? strtolower(trim($validated['otp_email'])) : null;
 
         $user = User::create([
             'name' => $validated['name'],
-            'email' => $validated['email'],
+            'username' => $validated['username'] ?? null,
             'role' => $validated['role'],
             'password' => $password,
             'is_active' => true,
-            'email_verified_at' => now(),
             // See RequirePasswordChange: a password the administrator has read
             // is not the account holder's password yet.
             'must_change_password' => true,
+            'otp_email' => $address,
         ]);
 
         if ($validated['employee_id'] ?? null) {
             Employee::whereKey($validated['employee_id'])->update(['user_id' => $user->id]);
         }
 
-        return back()->with('success', "Account created. Username: {$user->username} / temporary password: {$password}");
+        $emailSent = false;
+        $mailError = null;
+
+        if ($user->otp_email) {
+            try {
+                $user->notify(new AccountProvisioned($password, $user->role));
+                $emailSent = true;
+            } catch (\Throwable $e) {
+                Log::error("Failed to email account credentials to {$user->otp_email}: ".$e->getMessage());
+                $mailError = $e->getMessage();
+            }
+        }
+
+        $message = "Account created. Username: {$user->username} / temporary password: {$password}.";
+        if ($emailSent) {
+            $message .= " Company login credentials and system link have been sent to {$user->otp_email}.";
+        } elseif ($mailError) {
+            $message .= " (Note: Could not send email to {$user->otp_email}: {$mailError})";
+        }
+
+        return back()->with('success', $message);
+    }
+
+    /**
+     * Editing an account's profile — the name it is known by and the username
+     * it signs in with.
+     *
+     * **Renaming somebody is allowed here and refused on their own Security
+     * screen, and that is not an inconsistency.** `SettingPolicy::renameSelf`
+     * holds every non-admin to the name on their employee record, because
+     * nothing in this system reconciles `users.name` with the 201 file and a
+     * drift between them is silent and permanent. This screen is the
+     * administrator's, which is exactly who that ability belongs to — and
+     * where an account *is* linked to an employee, the response says so when
+     * the two names part company, rather than leaving it to be discovered on a
+     * payslip.
+     *
+     * The username is normalised through `User::withDomain()`, so `nina` and
+     * `nina@primepower.com` are the same entry and only the second is stored.
+     * An account cannot be left without one: `User::booted()` fills a blank,
+     * but a blank typed *over* a working username would change what somebody
+     * signs in with to something they were never told.
+     */
+    public function updateProfile(Request $request, User $user): RedirectResponse
+    {
+        Gate::authorize('manageUsers', Setting::class);
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'username' => [
+                'required',
+                'string',
+                'max:120',
+                Rule::unique('users', 'username')->ignore($user->id),
+            ],
+            /*
+             * The personal inbox sign-in codes go to — a Gmail, usually,
+             * because that is what people have. **Not restricted to gmail.com
+             * on purpose**: the Gmail in this feature is the company account
+             * that *sends*, configured once in `MAIL_*`, and refusing a
+             * Yahoo or an Outlook address on the receiving side would be a
+             * rule about the wrong half.
+             *
+             * Nullable, because clearing it is how the factor is switched off
+             * for one account — and `dns` is deliberately not used: it fails
+             * on an offline machine and on a domain whose MX records are slow,
+             * which would refuse a correct address.
+             */
+            'otp_email' => ['nullable', 'email:rfc', 'max:180'],
+        ]);
+
+        $username = User::withDomain($validated['username']);
+
+        if ($username !== $user->username && User::where('username', $username)->whereKeyNot($user->id)->exists()) {
+            return back()->withErrors(['username' => 'That username is taken.']);
+        }
+
+        $address = filled($validated['otp_email'] ?? null) ? strtolower(trim($validated['otp_email'])) : null;
+        $changed = $address !== $user->otp_email;
+
+        $user->update([
+            'name' => $validated['name'],
+            'username' => $username,
+            'otp_email' => $address,
+        ]);
+
+        /*
+         * A new address has not been proved yet, and any code outstanding for
+         * the old one is a credential pointing at an inbox that is no longer
+         * this account's. Both go.
+         */
+        if ($changed) {
+            $user->forceFill(['otp_email_verified_at' => null])->save();
+            $this->otp->clear($user);
+        }
+
+        $employeeName = $user->employee?->full_name;
+
+        // Said out loud rather than prevented: HR renames somebody on the 201
+        // file for real reasons (a marriage, a correction), and refusing the
+        // save would leave the login stuck on a name nobody uses.
+        $drifted = $employeeName && $employeeName !== $user->name
+            ? " Note: their employee record still reads \"{$employeeName}\" — nothing reconciles the two."
+            : '';
+
+        $factor = match (true) {
+            $address === null => ' No personal email, so this account signs in with a password alone.',
+            $changed => " Sign-in codes will go to {$address} — send a test code to prove it arrives.",
+            default => '',
+        };
+
+        return back()->with('success', "Profile saved. {$user->name} signs in as {$user->username}.".$drifted.$factor);
+    }
+
+    /**
+     * Sends a real code to the connected inbox, now, so a typo or a broken
+     * mailer is found here rather than at somebody's next sign-in.
+     *
+     * This is the whole reason the button exists. `MAIL_*` is configuration
+     * nobody can verify by reading it, and an address is typed by hand: with
+     * no way to test either, the first proof that both are right would be an
+     * employee who cannot get in and an administrator who cannot tell which
+     * of the two is wrong.
+     *
+     * It issues a genuine code rather than a fake one, because a test that
+     * exercises a different path proves nothing about this one. The code is
+     * live for its normal two minutes and the person can simply use it.
+     */
+    public function sendTestCode(User $user): RedirectResponse
+    {
+        Gate::authorize('manageUsers', Setting::class);
+
+        if (blank($user->otp_email)) {
+            return back()->with('error', "{$user->name} has no personal email connected yet.");
+        }
+
+        return $this->otp->send($user)
+            ? back()->with('success', "A sign-in code was sent to {$user->otp_email}. Ask them to confirm it arrived.")
+            : back()->with('error', 'The code could not be sent. Check MAIL_USERNAME and MAIL_PASSWORD on the server, then try again.');
     }
 
     public function updateRole(Request $request, User $user): RedirectResponse
@@ -207,10 +384,24 @@ class UserAccessController extends Controller
             'password' => $password,
             'must_change_password' => true,
         ]);
-        $user->tokens()->delete();
+        $emailSent = false;
+        if ($user->otp_email) {
+            try {
+                $user->notify(new AccountProvisioned($password, $user->role));
+                $emailSent = true;
+            } catch (\Throwable $e) {
+                Log::error("Failed to email reset credentials to {$user->otp_email}: " . $e->getMessage());
+            }
+        }
 
-        return back()->with('success', "New password for {$user->username}: {$password}");
+        $message = "New password for {$user->username}: {$password}";
+        if ($emailSent) {
+            $message .= " — emailed to {$user->otp_email}.";
+        }
+
+        return back()->with('success', $message);
     }
+
 
     /** @return Collection<int, string> user id => ISO time of their latest sign-in */
     private function lastSignIns()

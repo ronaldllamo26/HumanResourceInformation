@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AttendanceLog;
+use App\Models\ClientTimesheet;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\LeaveRequest;
+use App\Models\OvertimeRequest;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
 use App\Models\PerformanceReview;
+use App\Models\TimeCorrection;
 use App\Models\User;
 use App\Services\CredentialExpiryScanner;
 use App\Services\EmployeeService;
@@ -68,7 +72,9 @@ class DashboardController extends Controller
             'headcountTrend' => $this->headcountTrend($today),
             'statusMix' => $this->statusMix(),
             'leaveToday' => $this->leaveToday($today),
+            'attendanceToday' => $this->attendanceToday($scoped, $today),
             'approvals' => $this->approvals($request),
+            'needsAction' => $this->needsAction($scoped, $today),
             'payroll' => $canViewCompanyFigures ? $this->latestPayroll() : self::NO_PAYROLL,
             'leaveSummary' => $canViewCompanyFigures ? $this->leaveSummary($today) : null,
             'payrollSummary' => $canViewCompanyFigures ? $this->payrollSummary() : null,
@@ -475,11 +481,153 @@ class DashboardController extends Controller
     /** What the signed-in user still has to act on. @return array<string, int> */
     private function approvals(Request $request): array
     {
+        $user = $request->user();
+
+        /*
+         * Overtime and corrections joined this tile when Time & Attendance was
+         * rebuilt. Counted the way the policies decide them — HR sees every
+         * pending request, a supervisor sees their own reports', and neither
+         * sees their own — rather than counting every pending row and showing
+         * somebody a queue they cannot act on.
+         */
+        $decidable = function (string $model) use ($user) {
+            $query = $model::query()->where('status', 'pending');
+
+            if ($user->isHrAdmin()) {
+                return $query->whereHas('employee', fn ($employee) => $employee->where(
+                    fn ($inner) => $inner->whereNull('user_id')->orWhere('user_id', '!=', $user->id),
+                ))->count();
+            }
+
+            if ($user->isSupervisor() && $user->employee) {
+                return $query->whereHas('employee', fn ($employee) => $employee
+                    ->where('supervisor_id', $user->employee->id)
+                    ->where('id', '!=', $user->employee->id))->count();
+            }
+
+            return 0;
+        };
+
         return [
-            'leave' => $this->leave->pendingApprovalsFor($request->user()),
-            'reviews' => PerformanceReview::where('reviewer_id', $request->user()->id)
+            'leave' => $this->leave->pendingApprovalsFor($user),
+            'overtime' => $decidable(OvertimeRequest::class),
+            'corrections' => $decidable(TimeCorrection::class),
+            'reviews' => PerformanceReview::where('reviewer_id', $user->id)
                 ->where('status', PerformanceReview::STATUS_DRAFT)
                 ->count(),
+        ];
+    }
+
+    /**
+     * Who is in today, out of who was expected.
+     *
+     * Read from the time records rather than counted a second way here: the
+     * statuses are `AttendanceLog`'s own, so this tile, the Daily Time Records
+     * screen and the payslip cannot disagree about the same morning.
+     *
+     * **A day nobody has keyed yet is `unrecorded`, not absent.** Nothing
+     * recorded is not the same claim as "did not come in", and a dashboard
+     * that made that claim before lunch would have HR chasing people who are
+     * at work.
+     *
+     * @return array<string, mixed>
+     */
+    private function attendanceToday($scoped, Carbon $today): array
+    {
+        $expected = (clone $scoped)->where('status', '!=', 'inactive')->count();
+
+        $counts = AttendanceLog::query()
+            ->whereIn('employee_id', (clone $scoped)->select('employees.id'))
+            ->whereDate('work_date', $today->toDateString())
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $worked = collect(AttendanceLog::WORKED_STATUSES)->sum(fn ($status) => (int) ($counts[$status] ?? 0));
+        $recorded = (int) $counts->sum();
+
+        // Yesterday, for the "vs" line — the reference dashboards all carry
+        // one, and a figure with nothing to compare against is a figure
+        // nobody can read as good or bad.
+        $yesterdayWorked = AttendanceLog::query()
+            ->whereIn('employee_id', (clone $scoped)->select('employees.id'))
+            ->whereDate('work_date', $today->copy()->subDay()->toDateString())
+            ->whereIn('status', AttendanceLog::WORKED_STATUSES)
+            ->count();
+
+        return [
+            'expected' => $expected,
+            'present' => $worked,
+            'late' => (int) ($counts[AttendanceLog::STATUS_LATE] ?? 0),
+            'absent' => (int) ($counts[AttendanceLog::STATUS_ABSENT] ?? 0),
+            'on_leave' => (int) ($counts[AttendanceLog::STATUS_ON_LEAVE] ?? 0),
+            'rest_day' => (int) ($counts[AttendanceLog::STATUS_REST_DAY] ?? 0),
+            'incomplete' => (int) ($counts[AttendanceLog::STATUS_INCOMPLETE] ?? 0),
+            // Expected, less everybody who has a record of any kind.
+            'unrecorded' => max(0, $expected - $recorded),
+            // The day the figures were counted for, so the tile's links open
+            // the same day rather than whatever the browser thinks today is.
+            'date' => $today->toDateString(),
+            'change' => $worked - $yesterdayWorked,
+            'as_of' => $today->format('M j'),
+        ];
+    }
+
+    /**
+     * The things that are nobody's queue and still somebody's problem.
+     *
+     * Each line is read from the service that already owns it — the credential
+     * scanner, the time records, the client timesheets — so this card cannot
+     * disagree with the screen it links to. `headline` names the most urgent
+     * one in words, because a row of three numbers is three questions and the
+     * reader wants the answer to "what first".
+     *
+     * @return array<string, mixed>
+     */
+    private function needsAction($scoped, Carbon $today): array
+    {
+        $expiring = $this->credentials->countFor(
+            EmployeeDocument::query()->whereIn('employee_id', (clone $scoped)->select('employees.id')),
+        );
+
+        // A missing time-out is never flagged for today — the shift may not
+        // have ended. Only days already behind us count.
+        $incomplete = AttendanceLog::query()
+            ->whereIn('employee_id', (clone $scoped)->select('employees.id'))
+            ->where('status', AttendanceLog::STATUS_INCOMPLETE)
+            ->whereDate('work_date', '<', $today->toDateString())
+            ->count();
+
+        $period = PayrollPeriod::query()
+            ->whereDate('start_date', '<=', $today->toDateString())
+            ->orderByDesc('start_date')
+            ->first();
+
+        $deployed = Employee::query()
+            ->where('employment_category', 'external')
+            ->where('status', '!=', 'inactive')
+            ->whereNotNull('client_id')
+            ->distinct()
+            ->pluck('client_id');
+
+        $unconfirmed = $period === null ? 0 : max(0, $deployed->count() - ClientTimesheet::query()
+            ->where('payroll_period_id', $period->id)
+            ->whereIn('status', [ClientTimesheet::STATUS_CONFIRMED, ClientTimesheet::STATUS_DISPUTED])
+            ->whereIn('client_id', $deployed)
+            ->count());
+
+        $headline = match (true) {
+            $expiring > 0 => $expiring.' credential(s) expired or expiring — a lapsed licence stops somebody being dispatched.',
+            $incomplete > 0 => $incomplete.' day(s) with no time-out — they pay as not worked until fixed.',
+            $unconfirmed > 0 => $unconfirmed.' client(s) have not confirmed their timesheet for '.$period?->name.'.',
+            default => null,
+        };
+
+        return [
+            'credentials' => $expiring,
+            'incomplete' => $incomplete,
+            'timesheets' => $unconfirmed,
+            'headline' => $headline,
         ];
     }
 

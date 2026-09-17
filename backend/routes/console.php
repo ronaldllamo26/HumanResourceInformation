@@ -59,7 +59,7 @@ Artisan::command('hris:set-admin-password', function () {
         return;
     }
 
-    $admin = User::firstOrNew(['username' => 'admin@primepower.test']);
+    $admin = User::firstOrNew(['username' => 'admin@primepower.com']);
 
     $admin->fill([
         'name' => $admin->name ?: 'System Administrator',
@@ -73,7 +73,7 @@ Artisan::command('hris:set-admin-password', function () {
 
     Setting::setMany(['security.admin_password_applied' => $fingerprint], 'security');
 
-    $this->warn('Admin password set for admin@primepower.test from HRIS_ADMIN_PASSWORD. Sign in, change it, then remove the variable.');
+    $this->warn('Admin password set for admin@primepower.com from HRIS_ADMIN_PASSWORD. Sign in, change it, then remove the variable.');
 })->purpose('Set the admin password from HRIS_ADMIN_PASSWORD (once per value)');
 
 /*

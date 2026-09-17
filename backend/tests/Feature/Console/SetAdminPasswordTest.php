@@ -14,7 +14,7 @@ class SetAdminPasswordTest extends TestCase
     public function test_nothing_happens_without_the_variable(): void
     {
         config(['auth.bootstrap_admin_password' => null]);
-        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.com']);
         $before = $admin->password;
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();
@@ -25,7 +25,7 @@ class SetAdminPasswordTest extends TestCase
     public function test_the_variable_sets_the_admin_password_and_forces_a_change(): void
     {
         config(['auth.bootstrap_admin_password' => 'Temp-Pass-2026']);
-        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.com']);
         $admin->createToken('old');
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();
@@ -42,11 +42,11 @@ class SetAdminPasswordTest extends TestCase
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();
 
-        $admin = User::where('username', 'admin@primepower.test')->first();
+        $admin = User::where('username', 'admin@primepower.com')->first();
         $this->assertNotNull($admin);
         $this->assertTrue($admin->isAdmin());
 
-        $this->post('/login', ['username' => 'admin@primepower.test', 'password' => 'Temp-Pass-2026']);
+        $this->post('/login', ['username' => 'admin@primepower.com', 'password' => 'Temp-Pass-2026']);
         $this->assertAuthenticatedAs($admin);
     }
 
@@ -54,11 +54,11 @@ class SetAdminPasswordTest extends TestCase
     public function test_the_same_value_is_applied_only_once(): void
     {
         config(['auth.bootstrap_admin_password' => 'Temp-Pass-2026']);
-        User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        User::factory()->admin()->create(['username' => 'admin@primepower.com']);
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();
 
-        $admin = User::where('username', 'admin@primepower.test')->first();
+        $admin = User::where('username', 'admin@primepower.com')->first();
         $admin->update(['password' => 'Chosen-By-Admin-9', 'must_change_password' => false]);
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();
@@ -68,7 +68,7 @@ class SetAdminPasswordTest extends TestCase
 
     public function test_a_new_value_is_applied_again(): void
     {
-        User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        User::factory()->admin()->create(['username' => 'admin@primepower.com']);
 
         config(['auth.bootstrap_admin_password' => 'First-Pass-2026']);
         $this->artisan('hris:set-admin-password')->assertSuccessful();
@@ -76,14 +76,14 @@ class SetAdminPasswordTest extends TestCase
         config(['auth.bootstrap_admin_password' => 'Second-Pass-2026']);
         $this->artisan('hris:set-admin-password')->assertSuccessful();
 
-        $admin = User::where('username', 'admin@primepower.test')->first();
+        $admin = User::where('username', 'admin@primepower.com')->first();
         $this->assertTrue(Hash::check('Second-Pass-2026', $admin->password));
     }
 
     public function test_a_too_short_value_changes_nothing(): void
     {
         config(['auth.bootstrap_admin_password' => 'short']);
-        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.com']);
         $before = $admin->password;
 
         $this->artisan('hris:set-admin-password')->assertSuccessful();

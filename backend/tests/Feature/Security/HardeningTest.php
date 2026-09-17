@@ -207,7 +207,7 @@ class HardeningTest extends TestCase
         $service->create([
             'first_name' => 'Ana',
             'last_name' => 'Reyes',
-            'email' => 'ana.reyes@primepower.test',
+            'email' => 'ana.reyes@primepower.com',
             'date_hired' => '2026-01-05',
             'employment_status' => 'probationary',
             'status' => 'active',

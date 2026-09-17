@@ -40,10 +40,10 @@ const titleCase = (value) =>
         .replace(/[_-]/g, ' ')
         .replace(/\b\w/g, (character) => character.toUpperCase());
 
-function Section({ title, description, children }) {
+function Section({ title, children }) {
     return (
         <Card>
-            <CardHeader title={title} description={description} />
+            <CardHeader title={title} />
             <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</CardBody>
         </Card>
     );
@@ -102,10 +102,7 @@ export default function EmployeeForm({
 
     return (
         <div className="space-y-5">
-            <Section
-                title="Personal Information"
-                description="Basic identity details for the 201 file."
-            >
+            <Section title="Personal Information">
                 <Field label="First Name" required error={errors.first_name}>
                     {({ id }) => (
                         <Input
@@ -238,10 +235,7 @@ export default function EmployeeForm({
                 </Field>
             </Section>
 
-            <Section
-                title="Contact Information"
-                description="How the company reaches this employee."
-            >
+            <Section title="Contact Information">
                 <Field label="Email Address" error={errors.email}>
                     {({ id }) => (
                         <Input
@@ -304,10 +298,7 @@ export default function EmployeeForm({
                 </Field>
             </Section>
 
-            <Section
-                title="Emergency Contact"
-                description="Person to notify in case of an incident."
-            >
+            <Section title="Emergency Contact">
                 <Field label="Contact Name" error={errors.emergency_contact_name}>
                     {({ id }) => (
                         <Input
@@ -339,10 +330,7 @@ export default function EmployeeForm({
                 </Field>
             </Section>
 
-            <Section
-                title="Government IDs"
-                description="Required for payroll remittances and statutory reporting."
-            >
+            <Section title="Government IDs">
                 <Field label="SSS Number" error={errors.sss_number}>
                     {({ id }) => (
                         <Input
@@ -382,10 +370,7 @@ export default function EmployeeForm({
             {/* Ahead of Employment Details on purpose: whether someone is
                 agency staff or deployed decides what the rest of that section
                 even means, and it is the first thing HR knows about a hire. */}
-            <Section
-                title="Assignment"
-                description="Whether this person runs the agency or is deployed to a client."
-            >
+            <Section title="Assignment">
                 <Field label="Staff Category" required error={errors.employment_category}>
                     {({ id }) => (
                         <Select
@@ -462,10 +447,7 @@ export default function EmployeeForm({
                 )}
             </Section>
 
-            <Section
-                title="Employment Details"
-                description="Position, reporting line, and tenure."
-            >
+            <Section title="Employment Details">
                 <Field label="Department" error={errors.department_id}>
                     {({ id }) => (
                         <Select
@@ -611,10 +593,7 @@ export default function EmployeeForm({
                 )}
             </Section>
 
-            <Section
-                title="Compensation & Banking"
-                description="Baseline figures the Payroll module computes from."
-            >
+            <Section title="Compensation & Banking">
                 <Field label="Basic Salary (PHP)" required error={errors.basic_salary}>
                     {({ id }) => (
                         <Input
@@ -657,10 +636,7 @@ export default function EmployeeForm({
                 </Field>
             </Section>
 
-            <Section
-                title="Driver's License"
-                description="Required for drivers and field personnel in fleet operations."
-            >
+            <Section title="Driver's License">
                 <Field label="License Number" error={errors.drivers_license_number}>
                     {({ id }) => (
                         <Input
@@ -723,7 +699,7 @@ export default function EmployeeForm({
             </Section>
 
             <Card>
-                <CardHeader title="Notes" description="Internal remarks visible to HR only." />
+                <CardHeader title="Notes" />
                 <CardBody>
                     <Field error={errors.notes}>
                         {({ id }) => (
@@ -740,10 +716,7 @@ export default function EmployeeForm({
 
             {!isEdit && (
                 <Card>
-                    <CardHeader
-                        title="Self-Service Account"
-                        description="Optionally create a login so the employee can file leave and view payslips."
-                    />
+                    <CardHeader title="Self-Service Account" />
                     <CardBody className="space-y-4">
                         <label className="flex items-center gap-2.5">
                             <input

@@ -126,7 +126,6 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
             <Card>
                 <CardHeader
                     title={`${filters.year} Holiday Calendar`}
-                    description="Movable holidays (Holy Week, the Eids, Chinese New Year) are added once they are proclaimed."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Select

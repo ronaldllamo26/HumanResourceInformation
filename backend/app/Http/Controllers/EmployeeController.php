@@ -422,7 +422,7 @@ class EmployeeController extends Controller
         abort_unless($scanner->isEnabled(), 404);
 
         $request->validate([
-            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg,png,webp'],
+            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg,png,webp,pdf'],
         ]);
 
         $started = microtime(true);
@@ -454,7 +454,14 @@ class EmployeeController extends Controller
              * readings across drivers, and a row with no model on it cannot
              * say which one produced the number.
              */
-            'model' => (string) config(
+            /*
+             * The model that answered, not the one in config — with a
+             * fallback chain those are no longer the same thing, and Scanner
+             * Accuracy compares readings *by model*. Recording the configured
+             * one while a fallback did the work would blame a model that
+             * never saw the document.
+             */
+            'model' => $scanner->modelUsed() ?? (string) config(
                 'scanner.'.config('scanner.driver').'.model',
                 config('scanner.model'),
             ),

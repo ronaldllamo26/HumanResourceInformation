@@ -43,16 +43,10 @@ export default function General({ settings, timezones, dateFormats }) {
     };
 
     return (
-        <SettingsLayout
-            title="General"
-            description="Company details and regional formats used across every module and on payslips."
-        >
+        <SettingsLayout title="General">
             <form onSubmit={submit} className="space-y-5">
                 <Card>
-                    <CardHeader
-                        title="Company Profile"
-                        description="Appears on payslips and printed reports."
-                    />
+                    <CardHeader title="Company Profile" />
                     <CardBody className="grid gap-4 sm:grid-cols-2">
                         <Field label="Company Name" required error={error('company', 'name')}>
                             {({ id }) => (
@@ -115,10 +109,7 @@ export default function General({ settings, timezones, dateFormats }) {
                 </Card>
 
                 <Card>
-                    <CardHeader
-                        title="Employer Registration Numbers"
-                        description="Used on remittance reports for SSS, PhilHealth, and Pag-IBIG."
-                    />
+                    <CardHeader title="Employer Registration Numbers" />
                     <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <Field label="TIN" error={error('company', 'tin')}>
                             {({ id }) => (
@@ -172,10 +163,7 @@ export default function General({ settings, timezones, dateFormats }) {
                 </Card>
 
                 <Card>
-                    <CardHeader
-                        title="Regional"
-                        description="How dates, money, and the working week are interpreted."
-                    />
+                    <CardHeader title="Regional" />
                     <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <Field label="Timezone" required error={error('regional', 'timezone')}>
                             {({ id }) => (

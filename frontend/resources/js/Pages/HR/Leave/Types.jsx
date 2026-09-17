@@ -75,7 +75,6 @@ export default function Types({ types, can }) {
             <Card>
                 <CardHeader
                     title="Leave Types"
-                    description="The catalogue employees file against, and the entitlement each one carries."
                     action={
                         can.manage && (
                             <Button size="sm" onClick={open}>

@@ -15,7 +15,7 @@ class SeedIfEmptyTest extends TestCase
     {
         $this->artisan('hris:seed-if-empty')->assertSuccessful();
 
-        foreach (['admin@primepower.test', 'hrstaff@primepower.test', 'employee@primepower.test'] as $username) {
+        foreach (['admin@primepower.com', 'hrstaff@primepower.com', 'employee@primepower.com'] as $username) {
             $this->assertDatabaseHas('users', ['username' => $username]);
         }
     }
@@ -23,7 +23,7 @@ class SeedIfEmptyTest extends TestCase
     /** A restart must never re-issue passwords people have already changed. */
     public function test_a_database_with_accounts_is_left_alone(): void
     {
-        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.test']);
+        $admin = User::factory()->admin()->create(['username' => 'admin@primepower.com']);
         $password = $admin->password;
 
         $this->artisan('hris:seed-if-empty')

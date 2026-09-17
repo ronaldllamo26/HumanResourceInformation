@@ -193,10 +193,7 @@ export default function Review({ review, scorecard, weightTotal, weightsBalance,
             <form onSubmit={submitDraft} className="space-y-5">
                 {/* KPI scorecard */}
                 <Card>
-                    <CardHeader
-                        title="Scorecard"
-                        description={`Rate each KPI from ${scale.min} to ${scale.max}. Weights come from the employee's scorecard.`}
-                    />
+                    <CardHeader title="Scorecard" />
 
                     <CardBody className="space-y-5">
                         {scorecard.length === 0 && (
@@ -290,10 +287,7 @@ export default function Review({ review, scorecard, weightTotal, weightsBalance,
 
                 {/* Narrative */}
                 <Card>
-                    <CardHeader
-                        title="Narrative"
-                        description="What the numbers cannot say on their own."
-                    />
+                    <CardHeader title="Narrative" />
                     <CardBody className="grid gap-4 sm:grid-cols-2">
                         {[
                             ['strengths', 'Strengths'],

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Http\Request;
@@ -38,6 +39,17 @@ use Illuminate\Support\Facades\Route;
 | has always been about.
 */
 
+/*
+ * Fallback for non-GET/POST HTTP verbs on login.
+ *
+ * When a session expires and an AJAX or Inertia PUT/PATCH/DELETE request is
+ * redirected to /login, some browsers follow the 302 keeping the original
+ * request method. Redirecting with 303 forces the browser to use GET.
+ */
+Route::match(['put', 'patch', 'delete'], 'login', function () {
+    return redirect()->route('login', [], 303);
+});
+
 Route::middleware('auth')->group(function () {
     Route::get('verify-email', EmailVerificationPromptController::class)
         ->name('verification.notice');
@@ -60,6 +72,30 @@ Route::middleware('auth')->group(function () {
      * URL, which is unchanged.
      */
     Route::put('password', [PasswordController::class, 'update'])->name('password.change');
+});
+
+/*
+|--------------------------------------------------------------------------
+| The sign-in code
+|--------------------------------------------------------------------------
+| Inside `auth`, because the code is the *second* factor: the password has
+| already been accepted and `RequireOtp` is holding the session here.
+|
+| Both actions are throttled on top of the service's own limits. The service
+| burns a code after five wrong answers and paces resends, which stops the
+| code being brute-forced; the throttles stop the *endpoint* being hammered
+| by a script that does not care about codes at all.
+*/
+Route::middleware('auth')->group(function () {
+    Route::get('otp', [OtpController::class, 'show'])->name('otp.challenge');
+
+    Route::post('otp', [OtpController::class, 'verify'])
+        ->middleware('throttle:12,1')
+        ->name('otp.verify');
+
+    Route::post('otp/resend', [OtpController::class, 'resend'])
+        ->middleware('throttle:6,1')
+        ->name('otp.resend');
 });
 
 /*

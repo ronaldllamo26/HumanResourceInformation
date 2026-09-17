@@ -64,10 +64,7 @@ export default function RecordChecks({ rows = [], summary, checks }) {
             breadcrumbs={[{ label: 'AI & Analytics' }, { label: 'Record Checks' }]}
         >
             <Card className="mb-6">
-                <CardHeader
-                    title="Where the records disagree with each other"
-                    description="201 File Status asks what is missing and Credentials asks what is lapsing. Neither can see a number keyed against two people, or a document naming somebody else. Every check here is a comparison — there is no model behind this screen."
-                />
+                <CardHeader title="Where the records disagree with each other" />
                 <CardBody>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <Tile

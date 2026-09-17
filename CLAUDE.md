@@ -384,6 +384,22 @@ Every colour is a semantic token in `resources/css/app.css`, exposed through
 use `bg-card`, `text-muted-foreground`, `border-border`, `bg-sidebar-accent`.
 Light and dark both work because components reference tokens, not values.
 
+**The palette is the owner's, checked value by value against the brand table**
+(#F2F7FC / #0A1B2E / #EDF5FB / #007DCC light, #0F1B26 / #E3EDF5 / #16222E /
+#33A1E6 dark, wordmark #DB3C3C). Two notes on where it argues with itself:
+
+- **`--card` is #EDF5FB, a step *darker* than the #F2F7FC page** — the same
+  value as `--sidebar`, so a card and the sidebar read as one material and the
+  page reads as the surface they sit on. That is the reverse of the dark block,
+  where the table puts the card (#16222E) *lighter* than the page (#0F1B26),
+  which is the conventional direction. Asked for and applied as written; the
+  one-line revert is `--card`/`--popover` back to `206 60% 99.2%`.
+- **`--logo-subtitle` is the one value not taken from the table.** The brand
+  spec says #0c0a0a in both modes; on the dark sidebar (#131E29) that is about
+  1.1:1 — invisible, not subtle. The dark block keeps the same hue and
+  saturation at 65% lightness (~6.5:1). Following the spec literally there
+  would delete the subtitle from the screen it appears on.
+
 - Shared components live in `resources/js/Components/ui/` — import from the
   `@/Components/ui` barrel.
 - Every authenticated page wraps in `@/Layouts/AppLayout` and passes `title` +
@@ -455,20 +471,38 @@ Light and dark both work because components reference tokens, not values.
   a technology none of its members use is disproved by the first person who
   clicks into it, and the one feature here that *is* AI — `DocumentScanner` —
   was never in the group at all. So the five went back beside the module whose
-  records each one reads: Exceptions to Timekeeping, and the other four into
-  **Checks & Readiness**, a sibling entry to Employee Information rather than
-  four more of its children — loose in that list they read as four more record
-  screens, which is the wrong claim about all four, since none of them stores
-  anything. Named for what they do rather than how: "Compliance" was the
-  obvious alternative and is taken, meaning SSS, BIR and PhilHealth remittance
-  under Payroll. It is a sibling and not a nesting because the sidebar renders
-  exactly two levels, which is the same shape Timekeeping and Leave take
-  inside Time & Attendance. What
+  records each one reads: Exceptions to Timekeeping, and the other four
+  beside Employee Information. Named for what they do rather than how:
+  "Compliance" was the obvious alternative and is taken, meaning SSS, BIR and
+  PhilHealth remittance under Payroll. What
   stays is the screen that *measures* the scanner, which is the only way a
   screen belongs to this feature — the scanner itself fills a form and runs
   the batch filer, and neither is a destination. Filing by input was the
   earlier mistake and it is worth not overcorrecting into the opposite one:
   the fix for a wrong label is a right label, not a wrong group.
+  - **The four checks are children of Employee Information, behind a
+    `divider` — the third arrangement, and the owner asked for it.** They were
+    loose in that list once, then pulled into a sibling entry called `Checks &
+    Readiness` because loose they read as four more record screens, which is
+    the wrong claim about all four: none of them stores anything, and each
+    answers a question the file itself does not — what is lapsing
+    (`CredentialExpiryScanner`), what was never filed (`OnboardingChecker`),
+    where the records disagree (`RecordIntegrityChecker`), and whether
+    somebody can be sent to a client tomorrow (`DeploymentReadinessChecker`,
+    which composes the first two).
+    - **What that objection was really against was the missing label, not the
+      nesting.** These screens are reached *from* a person's record, and a
+      reader asking "is this driver's licence lapsing" opens Employee
+      Information first — so a child carries `divider: 'Checks & readiness'`
+      and the sidebar draws that heading inside the dropdown. The four still
+      say what they are, and no longer cost a second top-level row to say it.
+    - **A `divider` belongs to the children *after* it, not to the child
+      carrying it.** Role filtering can remove that child, and a heading that
+      vanished with it would leave the set unlabelled for exactly one role, so
+      `visibleGroups()` moves it to the next survivor. Proved by filtering
+      Credentials to admin and watching the label land on 201 File Status.
+    - It stays two levels deep, because that is all the sidebar renders. The
+      dropdown is one list with a heading in it, not a third level.
   - **"Attendance Exceptions" is "Exceptions" again.** The longer name was
     earned by sitting in a group that mixed modules, where the bare word said
     nothing about which records. Its siblings are Records, Overtime and
@@ -489,6 +523,17 @@ Light and dark both work because components reference tokens, not values.
   ranking**, and a heading that says "administration" is what ranks it apart
   from the company's work. Nothing about the routes or the permissions has
   moved through any of the four.
+  - **Administration holds three entries now**, not one: Users & Access, Audit
+    Logs, and System Settings. The first two were reachable only as Settings
+    sections, which filed "who may open a 201 file" and "who read one" behind
+    the same door as the company's date format. They keep their `/settings/…`
+    routes and stay listed as sections — the same two-doors arrangement the
+    topbar gear and this group already have.
+  - **`activePrefix` now yields to an entry that owns the URL outright.**
+    System Settings lights on anything under `/settings`, which meant two rows
+    read as current on `/settings/users` once that had a row of its own — and
+    two current rows tell the reader neither. `isItemActive()` asks
+    `bestMatch()` first.
   - **One entry, not seven `children`.** The dropdown of seven is what made it
     read as a sixth module. The sections already live on the page as a row, so
     the sidebar carries a door and the page carries the sub-navigation.
@@ -583,7 +628,10 @@ Light and dark both work because components reference tokens, not values.
   to act on. `ProfileCard` answers the question the rest of the screen does
   not: *where do I go*. Name, employee number, position, department, client and
   supervisor, then the four screens that belong to that person — their 201
-  file, their attendance calendar, leave, and payslips.
+  file, their time records, leave, and payslips. The attendance link went
+  when Module 2 was deleted and came back with it; it carries `?employee=`,
+  because Daily Time Records is scoped and a link that lands on an unfiltered
+  list has made the reader do the narrowing.
   - **Every part of it is a link, which is the point rather than a flourish.**
     A card that states a department and cannot open it has told the reader
     something they already knew about themselves.
@@ -608,12 +656,11 @@ Light and dark both work because components reference tokens, not values.
     what a stolen dump is worth stealing and nothing on a landing page needs
     them. Asserted against the whole rendered payload rather than the shape of
     the array, the way `DirectoryTest` does it.
-  - Attendance is counted through `TimekeepingService::PRESENT_STATUSES` rather
-    than a fourth private copy of that list, and both halves of the month are
-    shown — "18 days in" and "2 days missed" are different questions, and the
-    second is the one somebody acts on. Each links to the employee calendar
-    carrying the same `from`/`to` it counted, so the screen it opens returns the
-    number on the card.
+  - **The card counts nothing.** It used to show "18 days in" and "2 days
+    missed" from a per-employee attendance count, which went with the old
+    module and has not come back: the figure would have to be computed for
+    every dashboard load, and the screen the link opens already shows the days
+    themselves. A link is cheaper than a number nobody reconciles.
 - **Below that it reads in four bands**, top to bottom: headline `StatCard`s,
   then the `SplitStatCard` / `MeterCard` detail row, then charts, then the
   three summary cards. `StatTile` and `TilePreview` are the units the summary
@@ -635,7 +682,85 @@ Light and dark both work because components reference tokens, not values.
   `EmployeePolicy::viewSensitive` draws for salary on a record. A withheld
   summary arrives as `null` and its card is not drawn; payroll arrives zeroed
   so the four-column headline row keeps its shape.
-- **`--grade-1` … `--grade-6` are a ramp, not six colours.** Dark green →
+- **No screen carries an explanatory sentence under its title any more.** 84
+  `description` props on `CardHeader` and `SettingsLayout` were removed on the
+  owner's instruction, and the reasoning they held is not lost — it is in this
+  file, which is where it belongs. A line that explains *why* a screen works
+  the way it does is read once and read past every day after that, and it is
+  paying rent in the one place a daily user cannot skip.
+  - **Three kinds of small text stayed, because each is doing a different
+    job**: `TableEmpty description`, which is drawn only when there is nothing
+    and says what to do about that; `Field hint`, which is how to fill the
+    field correctly; and `StatCard hint`, the sub-line under a figure
+    ("38 active · 3 probationary") — data, not commentary.
+  - A modal keeps its description only where it **instructs or warns**: what
+    the file is being attached to, which position somebody is moving from, why
+    reopening a closed cutoff needs a reason. The ones that restated their own
+    title went with the rest.
+- **The sign-in page is a floating two-panel card on a brand gradient, and
+  that is its third shape.** It was a centred card holding the form beside a
+  picture of the logo — half the screen spent on artwork somebody signing in
+  learns nothing from. Then a full-bleed split, which fixed that by making the
+  brand half *say what the system is*. Now it is a rounded card on a deep
+  gradient with the same two halves, because the owner asked for the shape the
+  other ISMERS systems use: somebody moving between Core 2 and Finance
+  Management should not meet a different building each time. What survived
+  every move is the rule about the left panel — it carries an eyebrow, the
+  module name, a pill, a welcome headline and one sentence of what this
+  covers, not a bigger logo.
+  - **The three claims went with the full-bleed version.** "5 modules · RBAC ·
+    signed audit trail" was true and checkable, which is the bar for anything
+    on this page, and it does not survive being squeezed into a card beside a
+    headline — a row of statistics under a welcome is a marketing page. The
+    bar still stands for whatever goes there next.
+  - **No demo credential line, and the reference screen has one.** A working
+    login painted on the front door of a system holding salary, government
+    identifiers and bank details is not a demo convenience. The seeded local
+    password is in this file, where a reader of the repository finds it and a
+    visitor to the deployment does not.
+  - The decorative circles are drawn with `border` on two spans rather than
+    loaded as an image: they cost no request and cannot be the asset that
+    fails.
+  - **The logo sits on a white tile inside the navy panel.** The artwork is a
+    full-colour globe with a red wordmark and it disappears into the panel
+    without one — the same reason the watermark version of it ran at 7%.
+  - **`--hero`, `--hero-foreground`, `--hero-muted` and `--hero-accent` hold
+    the same four values in the light and dark blocks, deliberately.** A
+    signed-out visitor has not chosen a theme yet, and a front door that is
+    deep navy at night and pale blue by day is two different buildings. The
+    navy is the logo's own globe outline so the watermark sits *on* the panel;
+    the accent is the wordmark's red.
+  - **Not `--primary`, and that is the reason the tokens exist.** Primary is a
+    control colour: in dark mode it lightens and pairs with a near-black
+    foreground, which is right for a button and wrong for a page-height panel
+    of prose.
+  - **Below `lg` the panel is gone, not stacked** — a phone should not scroll
+    past a page of prose to reach two fields, so the brand collapses to the
+    logo row above the form.
+  - The line under the button answers the missing forgot-password link in
+    words ("a forgotten password is reset by an administrator on Users &
+    Access — nothing here is emailed"), because that is the question somebody
+    reaches for the absent link to ask.
+- **The four record links above a 201 file are one component and one colour**,
+  and the colour is why they were rewritten. They were three hand-written
+  cards, identical apart from their tint — one `info`, one `success`, one
+  `warning` — which breaks the rule directly above: **tone is valence**, so
+  amber means somebody has to act and green means something passed. None of
+  the three is a state, and "My Performance" drawn in amber read as a problem
+  with the person's performance. `RecordLink` now draws a neutral tile that
+  takes the brand accent on hover, so the colour says "this is a link", which
+  is all that is true of it.
+  - **Each icon is the one the sidebar already uses for that destination** —
+    `ClipboardList` for time records, `CalendarDays` for leave, `FileText` for
+    payslips, `TrendingUp` for performance. A screen wearing two different
+    icons in two places is two things to learn about one screen.
+  - **There are four now, not three**: Time Records rejoined when Module 2 was
+    rebuilt. The card set is the four screens that hold this person's own
+    activity, and leaving attendance out of it was an artefact of the deletion
+    rather than a decision.
+  - The labels still flip on `isSelf` — "My Payslips" on your own record,
+    "Issued Payslips" on somebody else's — because HR opening a file is not
+    looking at their own. Dark green →
   green → yellow-green → yellow → orange → red, meaningful only in order.
   Reach for them when something is *a position on a scale*; keep
   `success` / `warning` / `destructive` for states that mean one thing
@@ -764,14 +889,56 @@ legal to dispatch.
   no test. `ScannerDriverRequestTest` asserts what each driver puts on the
   wire, and every driver is a deployment driver now, so every one needs a leg
   there.
-- **The free tier is 20 scans a day, per model.** Measured, not read: Google's
-  429 body names the quota — `GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
-  value `20`. Enough to demonstrate the feature and nowhere near enough to run
-  an HR department on. Past it a scan returns nothing and HR types the fields,
-  which is what every other failure here collapses to — so the limit degrades
-  the feature rather than breaking the screen. Paid billing lifts it; so does
-  a paid model on `openrouter`. There is no longer a local driver to fall back
-  to, and that is the trade accepted when it was removed.
+- **The free tier is 20 scans a day *and* 5 a minute, both per model.**
+  Measured, not read, and re-measured since: Google's 429 body names each
+  quota outright — `GenerateRequestsPerDayPerProjectPerModel-FreeTier` value
+  `20`, and `GenerateRequestsPerMinutePerProjectPerModel-FreeTier` value `5`,
+  the second carrying `quotaDimensions: {model, location}` which is what
+  proves the counter is per model rather than per key. Past either, a scan
+  returns nothing and HR types the fields — the limit degrades the feature
+  rather than breaking the screen. Paid billing lifts it; so does a paid model
+  on `openrouter`. There is no longer a local driver to fall back to.
+  - **The public numbers are gone, so this has to be measured.** Google
+    removed the rate-limit tables from `ai.google.dev` — the page now says
+    limits "can be viewed in Google AI Studio", which needs the account
+    holder's own login — and neither the pricing page nor any response header
+    carries them. The only figure available from code is the one Google states
+    when it refuses, which is why both numbers above were taken by asking
+    until it did.
+  - **The fallback chain multiplies the daily cap, and that is the larger
+    half of why it exists.** `askGemini()` treats 429 as retryable, so a model
+    that has spent its 20 for the day is walked past exactly like a congested
+    one. The shipped chain is **six separate pools — up to ~120 scans a day**,
+    not 20. The chain was built for a 503; it turns out to answer the quota
+    ceiling too, which is why `GEMINI_FALLBACK_MODELS` is now set explicitly
+    in `.env` rather than left to the config default: it is capacity, not just
+    a safety net.
+  - **An alias shares a pool, so adding one buys nothing — and the chain is
+    de-duplicated by *name*, which cannot see it.** Confirmed by reading
+    `modelVersion` off real answers: `gemini-flash-latest` resolves to
+    `gemini-3.8-flash`, and `gemini-3.1-flash-lite-preview` resolves to
+    `gemini-3.1-flash-lite`. Both of those targets are already in the chain
+    under the other name, so neither alias is listed. `gemini-3.8-flash`
+    answering `429` immediately, on a day `gemini-flash-latest` had been
+    exhausted deliberately, is the same fact from the other direction.
+  - **Every entry was tested against the request the driver really sends** —
+    a real image plus `responseJsonSchema` — and read a test licence
+    correctly, because being in `ListModels` has already misled twice.
+    `gemini-2.5-flash` answers `404` "no longer available to new users", and
+    `gemini-3.5-flash-lite` and `gemini-flash-lite-latest` answer `400` even
+    for a one-word text request. The two `omni` models answered `429` on a
+    first request and are not dependable. `gemini-3-flash-preview` passed and
+    is in the chain: a preview tag is a stability risk, not a reading-quality
+    one, so it sits with the full flash models rather than below them.
+  - **`gemini-3.1-flash-lite`'s own cap is deliberately unmeasured.** Reading
+    it means spending it, and it is the chain's last resort — the one model
+    kept in reserve for the day the five above are exhausted. It is assumed to
+    be at least 20 rather than known to be, and the ~120 figure carries that
+    assumption.
+  - **The per-minute cap is the one a burst actually meets.** 5 a minute per
+    model means a single model accepts a scan about every twelve seconds; the
+    chain absorbs roughly 30 in a minute across six pools, moving down the
+    list as each one refuses.
 - **Gemini is retried and the other two are not**, because only this one shares
   a quota. Six identical scans on a real key came back three answered and three
   429, so a driver that gave up on the first would look broken half the time
@@ -785,6 +952,74 @@ legal to dispatch.
   - The 429 body says "this model is currently experiencing high demand",
     which reads as load and is a quota. The status code is the honest signal;
     the prose is not.
+- **Retrying one model is not enough, and a 503 took the whole feature down
+  proving it.** The scanner went dark with a valid key, a model that existed
+  and took images, and nothing misconfigured anywhere: `gemini-3.5-flash`
+  answered **503 UNAVAILABLE** to every attempt, the driver retried the *same*
+  congested model three times, logged `attempts_exhausted` and gave up — so
+  HR saw a Scan button that did nothing, and `scanner:check` said "No answer
+  after 22.3s" and then offered three guesses, none of which was the cause.
+  - **The free tier shares one pool per model, so retrying a busy model is
+    four ways of hearing the same no.** A *different* model is a different
+    pool, which is the whole of the fix: `config('scanner.gemini.fallback_models')`
+    is walked in order when the configured model answers 429, 5xx, or nothing.
+    Measured on the same key in the same minute — 3.5-flash 503, 3.7-flash 503
+    after 24.8s, **3.6-flash 200 in 1.8s** — so this is not a theory about
+    load, it is what the key was doing.
+  - **Only capacity falls through.** A 400 (a rejected schema) or a 401 (a bad
+    key) is an *answer*, and asking a second model the same rejected question
+    spends three times as long arriving in the same place. A connection failure
+    stops too: the next model is on the same network.
+  - **Per-model retries dropped from three to one** for the same reason. The
+    recovery is the next pool, not a fourth knock; three retries only bought
+    the 22 seconds it took to discover that a busy model is busy.
+  - **The answering model is what goes on the row.** `DocumentScanner::modelUsed()`
+    is read by the controller into `document_scans.model`, because Scanner
+    Accuracy compares readings **by model** — recording the configured one
+    while a fallback did the work would put a bad reading against a model that
+    never saw the document. A fallback answering is also logged, since
+    otherwise the only sign that the default is congested is a slower form.
+  - **`scanner:check` measures instead of guessing.** It prints the chain, says
+    which model answered and suggests promoting it if it was a fallback, and on
+    a total failure asks each model in turn with a three-line text request and
+    prints what came back — 404 the name, 429 the daily quota, 503 the pool —
+    then gives one instruction only when every model agreed, and points at the
+    rows when they differ. Its old three-cause list would have sent somebody
+    hunting for a bad key on the one outage it was there for.
+  - **It reads `error.details[].reason`, not just the status, because a wrong
+    key is a `400` here.** Gemini validates the body before the key and
+    answers `400 INVALID_ARGUMENT` carrying `API_KEY_INVALID` — the same
+    conflation that once made a wrong schema and a wrong key indistinguishable
+    from outside. Classifying on the number alone printed "the request itself
+    was rejected" over a column of bad-key failures, which is the guessing this
+    command was being fixed for. Measured against the real endpoint with a
+    deliberately wrong key, not read off the documentation.
+  - **A busy chain is still an empty form, not an error.** The chain buys
+    another pool to ask; it does not promise one is free, and where it lands is
+    where every scanner failure lands — HR types the fields.
+- **`gemini-3.1-flash-lite` closes the chain, and the model it is not is worth
+  recording.** The owner remembered a free-tier limit of 1,500 requests a day
+  and asked why the scanner was choked at 20 — and the number was real, but
+  belonged to `gemini-1.5-flash` and `gemini-2.0-flash`, both of which Google
+  has since retired outright: calling either now answers `404` with "This
+  model is no longer available… use models/gemini-3.6-flash." There is no
+  quota to reclaim there; those models are gone, not merely rationed, and
+  Google's own deprecation notice points at the model this chain already
+  defaults to.
+  - **A "lite" model is a genuinely separate quota, not a fourth seat at the
+    same table** — which is what makes it worth adding at all, once the
+    higher-quota generation turned out to be unreachable. Two siblings were
+    tried first and both refused the request this driver actually sends: a
+    real image plus `responseJsonSchema` came back `400 INVALID_ARGUMENT`
+    from `gemini-3.5-flash-lite` and `gemini-flash-lite-latest` alike, so
+    neither is in `fallback_models`. `gemini-3.1-flash-lite` was the one
+    measured to answer it correctly.
+  - **Last in the list on purpose.** A smaller model reads a photographed ID
+    worse than a full one — this is the fallback of last resort, reached only
+    once every "flash" model above it has already said no, not a peer to them.
+    `test_the_default_chain_reaches_the_lite_model_last` asserts the shipped
+    default ends here, not a hand-picked pair, so a typo in the config file
+    fails a test rather than only a future outage.
 - **The schema field was wrong too, and that was found later still.** Gemini
   has *two* of them and they take different dialects: `responseSchema` is an
   OpenAPI 3.0 subset whose `type` is a single value, and `responseJsonSchema`
@@ -989,9 +1224,15 @@ legal to dispatch.
   precisely the recovery a misread needs, and it also catches a past date
   typed by hand with no scan at all. The refusal is stated **on the field**
   rather than only in the scan panel, since a disabled button with no reason
-  beside it is where somebody stops trusting the screen. The escape hatch for
-  a document that genuinely must be filed expired is the one the name check
-  already uses: upload it as a PDF, which the scanner never reads.
+  beside it is where somebody stops trusting the screen.
+  - **The escape hatch used to be "upload it as a PDF, which the scanner never
+    reads", and PDF support removed it.** A PDF is read now, so it proposes
+    the past expiry like any image and the field blocks the upload. What is
+    left is the field itself: **clear the date and the document files without
+    one.** That is a real trade rather than a loophole —
+    `CredentialExpiryScanner` reads `expires_at`, so a lapsed licence filed
+    with no date never reaches a renewal queue. Filing the date and letting
+    Deployment Readiness block the driver is almost always the better answer.
 - **A PSA certificate is read a second time, in its own terms.** The general
   prompt asks for an ID card's fields — a number, an issue date, an expiry —
   and a Certificate of Live Birth has none of them, so the model answered with
@@ -1039,16 +1280,118 @@ legal to dispatch.
   a deploy or an env change, reporting *switched off* and *configured but
   broken* as the different answers they are. Not automatic and it gates
   nothing.
-- Images only, ≤5 MB (`config/scanner.php`). A PDF or DOCX upload skips the
+- **Images and PDFs, ≤5 MB** (`config/scanner.php`). A DOCX still skips the
   scanner rather than failing.
+  - **Gemini takes a PDF natively**, so it goes up as `inline_data` with its
+    own mime type and nothing is converted. That is the default driver, so on
+    a normal deployment a PDF costs nothing extra.
+  - **The other two drivers are image-only endpoints**, so
+    `DocumentScanner::pdfToImage()` renders the first page to a JPEG with
+    Imagick before sending. `scanner.pdf.max_pages` caps what is considered.
+    **Imagick is not installed on the development machine** — with no
+    extension the conversion returns null, the scan comes back empty, and the
+    form is filled by hand, which is where every other scanner failure lands
+    too.
+  - It matters because HR is handed PDFs: an NBI clearance downloaded from the
+    portal and a PSA certificate ordered online both arrive as one, and the
+    old answer was "print it and photograph it".
 - **Setup**: get a free key at `aistudio.google.com/apikey`, put
   `GEMINI_API_KEY` in `.env`, then `php artisan config:clear` and
-  `php artisan scanner:check`. Nothing to install — every driver is hosted,
+  `php artisan scanner:check`. `GEMINI_MODEL` defaults to the model measured
+  answering rather than the one that went dark, and `GEMINI_FALLBACK_MODELS`
+  is a comma-separated list only worth setting when the defaults are all busy
+  — every entry has to take an image and honour `responseJsonSchema`, or the
+  fallback is just a slower way to fail. Nothing to install — every driver is hosted,
   which is the whole reason the local one went. The same three lines are what
   a deployment needs, in the server's own `.env` and never in Git.
 - `DocumentScanner::read()` is `protected` for one reason: the SDK's
   `MessagesService` is `final`, so tests stub that single method to exercise
   every rule around it without a key or a network call.
+
+## Learning from HR's corrections (Module 1, AI)
+
+**This is what "train your AI" means in a system with this much data**, and the
+honest limit is stated first: nothing is retrained and no weights move. 42
+employees and a few dozen scans cannot train a model — a classifier fitted to
+that would produce confident figures with nothing behind them. What the data
+*can* support is the signal already being recorded and thrown away.
+
+`document_scans` holds every proposal and what the document was **actually
+filed as** — the rows Scanner Accuracy is measured from — so it already holds
+the one judgement in the whole pipeline with a person behind it: *this printed
+heading turned out to be that type*. `ScannerCorrectionMemory` turns those rows
+into heading → type rules, and `DocumentScanner::resolveType()` reads them on
+the next scan, so a type HR has fixed twice stops coming back wrong a third
+time.
+
+- **Nothing new is sent anywhere.** The rules are applied in PHP, against our
+  own rows. Feeding past readings to the provider as few-shot examples was the
+  obvious alternative and it is a *fresh cross-border transfer of other
+  employees' documents* under RA 10173 — for a gain this achieves without it.
+- **Ranked fourth of six, deliberately.** Below a number already on the 201
+  file and below the config's curated `title_keywords`, because those are
+  evidence and a curated list; above the number's shape, the validity window
+  and the model's own guess, because those three were measured wrong and this
+  one carries somebody's decision.
+- **A learned type is never `type_certain`.** Batch filing files only a certain
+  type unattended, and certainty is reserved for the two sources that have been
+  measured. A rule the system wrote for itself proposes, and a person confirms.
+- **`min_confirmations` is 2, and one disagreement removes a rule entirely.**
+  A heading filed as two different types means one of the filings is wrong and
+  the values cannot say which — the same refusal the two-parents misread and
+  the two-people-one-name match already make. One filing is an event, not a
+  pattern.
+- **Matched on a normalised heading, with containment either way**, because the
+  model condenses a three-line letterhead differently between scans ("TIN ID"
+  one time, "BUREAU OF INTERNAL REVENUE TIN ID" the next) and a rule that only
+  matched an identical string would never be used again.
+- **A heading carrying six or more digits in a row is never learned.** A
+  transcription that long is an ID number wearing a title's label, and learning
+  it would put somebody's number into a rule list that is drawn on screen.
+- Derived on read and cached for ten minutes rather than stored in a table:
+  the scans are the record, so there is no second copy to fall out of step —
+  and a rule that disappears when its scans are deleted is correct rather than
+  a bug.
+- **Shown on Scanner Accuracy, not hidden**: "Learned from your corrections"
+  lists each heading, the type, how many times it was confirmed and when it
+  was last seen. A rule the system wrote for itself is exactly the thing
+  somebody should be able to read and disagree with. `SCANNER_LEARNING=false`
+  switches the feedback off while still measuring.
+
+## What else the scanner reads (Module 1, AI)
+
+Three readings added after the first version shipped, each following the same
+rule as everything else here: **the model transcribes, PHP judges.**
+
+- **DL codes** (`dl_codes`), on a driver's licence only. For a fleet operator
+  this is not paperwork — a DL code is the legal ceiling on what somebody may
+  be put behind the wheel of, and a code-A holder on a truck is the same class
+  of problem as a lapsed licence. Parsed against `config('licenses.dl_codes')`
+  rather than a second list, so a hallucinated code is dropped rather than
+  shown, and the panel prints what survived.
+- **`GovernmentIdValidator`**, on a government ID only. The *heading* decides
+  which card it is — an SSS card is checked against SSS rules, a TIN ID
+  against TIN — so the check is only as confident as the transcription of the
+  letterhead, which is the same evidence `resolveType()` ranks second of five.
+  - **Length and shape only, and that is a deliberate ceiling.** None of the
+    four agencies publishes a check digit, so this catches a transposition and
+    a dropped digit and **cannot catch a forgery** — the same honesty
+    `LicenseVerifier::isStructurallySound()` is named for.
+  - A warning, never a block: HR keys real numbers that fail a format rule,
+    and refusing them would leave the 201 file emptier than the truth.
+- **`detectAnomalies()`** — the checks a person makes on a second glance and
+  nobody makes forty times: an issue date in the future, an expiry before the
+  issue, a clearance issued before the holder turned 18, a validity too short
+  for its type, a number already filed under a different document on the same
+  employee. Listed on the panel one by one rather than summed, because "3
+  anomalies" is a number nobody can act on.
+
+**Both new signals gate the batch filer, and only the batch filer.**
+`hold_anomalies` and `hold_failed_id_check` join the six switches in
+`config('scanner.autofile')` — on the upload form these are warnings a person
+reads and overrides, and unattended there is no person: filing a reading that
+argues with itself would store the contradiction as a fact. Each holds with
+the reason quoted into the review table, never refuses.
 
 ## Measuring the scanner (AI & Analytics)
 
@@ -1850,18 +2193,85 @@ The rating scale, the 360 reviewer weights, and the performance bands live in
   no acknowledgement.
 - A KPI already on a scorecard is deactivated rather than deleted.
 
+## Reports (AI & Analytics)
+
+**Reports (`/hr/reports`) is one screen, five reports, and three ways out** —
+the table on screen, a PDF, and a CSV. `ReportBuilder::build()` returns
+`columns`, `rows` and `totals`, and all three renderings read that one result,
+so **the download cannot disagree with the preview somebody read before
+pressing it**. That is the whole reason it is a service rather than three
+export methods on a controller.
+
+- Employee Masterlist, Attendance Summary, Leave Report, Payroll Register and
+  Client Billing Summary. Each one declares which filters it accepts
+  (`definitions()`), and the screen builds its filter row from that — a second
+  copy of "which filters does payroll take" in React would drift the first
+  time one changed.
+- **Every report reads the service that already owns its numbers.** Attendance
+  is `TimekeepingService::summaries()`; the payroll register is read back from
+  stored payslips of `PayrollRun::scopeReportable()` runs only. Nothing is
+  re-derived here, because a report and a screen disagreeing about the same
+  fortnight is one of them running a private copy of the rules.
+- **Government numbers, bank accounts and addresses are in no report**, and
+  that is asserted by a test rather than left to the column list. A report
+  leaves the building — printed, emailed to a client, left in a downloads
+  folder — so it is the one output where a field nobody needs is a breach
+  waiting to be noticed. Salary appears only in the payroll register, which is
+  payslips HR already approved.
+- **HR and admin only** (`SettingPolicy::viewReports`), with no supervisor
+  exemption: a report is many people's records in one file and cannot be
+  narrowed to a team without becoming a different report. A supervisor reads
+  their team on the Daily Time Records screen, which is scoped.
+- **Every download writes an `exported` audit row** through
+  `DataAccessLogger::exported()` — report, format, row count and the filters
+  used — after the gate, so a refused request is never recorded as an access.
+- The screen shows the first 100 rows and says so when there are more; the
+  files carry everything. A preview that silently showed a slice would have HR
+  reconciling against a number the download does not contain.
+- **The CSV carries its own heading and a control total**, because a CSV opened
+  three weeks later has to say what it is a report of and which filters made
+  it — the same reasoning the compliance exports follow.
+- **PDF is `barryvdh/laravel-dompdf` rendering `resources/views/reports/pdf.blade.php`,
+  landscape, plain black-on-white.** dompdf understands a small subset of CSS
+  and none of Tailwind's, so the design tokens cannot reach that view and the
+  styles are inline — which is also what a report photocopied in an office
+  needs. A wide report in portrait prints as a column of fragments, hence
+  landscape. This is a real file rather than the browser print dialog the
+  payslip uses, because a report is handed to somebody else; the print button
+  is still there for the screen.
+  - **Installing it broke `artisan` for a while, and the lesson is worth
+    keeping**: composer's download timed out mid-unzip on this machine, which
+    left `sabberworm/php-css-parser` registered in `installed.json` with its
+    own dependency (`thecodingmachine/safe`) never fetched — and every
+    `artisan` call then fatalled on an autoload file. A partial composer run
+    is not a no-op. `composer install` again, with
+    `COMPOSER_PROCESS_TIMEOUT` raised, is the fix.
 ## Settings
 
-Seven sections under `/settings`, sharing `SettingsLayout` (section list on the
-left). Company-wide sections are **admin-only**; Appearance and Security belong
-to every signed-in user.
+Eight sections under `/settings`, sharing `SettingsLayout`. Company-wide
+sections are **admin-only**; Appearance and Security belong to every signed-in
+user, and **Audit Logs is the one section that is neither** — `viewAuditLog` is
+`isHrAdmin()`, so a section carries an optional `roles` array where the
+`admin: true` flag cannot say it.
 
 - Values live in a **key/value `settings` table**, namespaced (`company.name`),
   JSON-valued, read through one cached map. A new preference is a new key in
   `Setting::DEFAULTS`, not a migration.
 - **Users & Access** is the only place besides the employee form where a login
   is created — an admin cannot demote or deactivate themselves, and
-  deactivating revokes API tokens.
+  deactivating revokes API tokens. **It also edits an account's profile** (the
+  name it is known by, the username it signs in with), which is a deliberate
+  asymmetry with `SettingPolicy::renameSelf`: that ability holds every
+  non-admin to the name on their employee record, because nothing reconciles
+  `users.name` with the 201 file — and *this* screen belongs to the
+  administrator who does hold it. Where the account is linked to an employee,
+  the modal offers the employee's name as a button and the flash says so when
+  the two part company; a rename is **reported, never refused**, since HR
+  renames people for real reasons (a marriage, a correction) and a refusal
+  would strand the login on a name nobody uses. A blank username is refused
+  rather than regenerated — `User::booted()` fills a blank on *create*, and
+  silently inventing one here would change what somebody signs in with to
+  something they were never told.
 - **Organization moved out.** Departments and positions are master data under
   Employee Information now (see below); `/settings/organization` redirects to
   `/hr/departments` so old links still land.
@@ -1889,17 +2299,76 @@ to every signed-in user.
 The access rules themselves are Module 1's (`scopedQuery()` + policies, salary
 behind `viewSensitive`). What follows is the layer underneath them.
 
-- **Sign-in is a username and a password, and there is no second factor.**
-  Both second factors — Fortify's authenticator-app 2FA and the emailed
-  one-time code — were removed on request, along with their routes, pages,
-  middleware (`RequireOtp`), service, config and tests; migration
-  `2026_09_13_000001_replace_second_factors_with_username_login` drops their
-  columns and adds `users.username`. **This is a known gap** on a system that
-  holds salary, government identifiers and bank details, and the first
-  control to restore before real employee data goes in.
+- **Sign-in is a username, a password, and — for an account with a personal
+  inbox connected to it — a six-digit code emailed to that inbox.** The
+  emailed factor was removed on request and asked for again; Fortify's
+  authenticator-app 2FA is still gone and is not coming back (nobody ever
+  enrolled in it, which is what a factor requiring an app install and
+  recovery codes gets you). `RequireOtp`, `OtpService`, `config/otp.php` and
+  the challenge screen are restored from commit `1be1b75` with one change
+  that matters: the code goes to `users.otp_email`, not to the login.
+  - **The login is not an address, so the factor needs one.** The username is
+    `name@primepower.com` and nothing is ever mailed to it — that is the
+    whole reason accounts lost their email. So each account gets **one
+    personal address, connected by an administrator on Users & Access**, and
+    `User::routeNotificationForMail()` returns it. The company Gmail in
+    `MAIL_*` is what sends; the account holder's own inbox is what receives.
+  - **Having an address *is* the enrolment.** There is no `otp_enabled`
+    column beside it: two ways to say "this account uses a code" would
+    eventually disagree, and "has somewhere a code can arrive" is the honest
+    condition. Clearing the address is how the factor is switched off for one
+    account, and the row on Users & Access says `Password only` when it is.
+  - **Nobody enrols themselves, and that is the half of the old design that
+    did not come back.** An employee cannot set their own second factor from
+    Settings → Security; an administrator connects the inbox, which is what
+    makes the address somebody else's decision rather than a self-service
+    field on the screen the factor is meant to protect.
+  - **`OTP_ENABLED=false` is the way back in, and the feature is built around
+    it.** There is no terminal on the deployment host and no emailed password
+    reset, so a broken mailer plus a required code would lock every account
+    out with no recovery at all — the one failure worse than not having the
+    factor. The switch drops it for everybody and leaves username and
+    password working. Nothing else in `config/otp.php` can cause that.
+  - **A failed send does not let anybody through.** `OtpService::send()`
+    returns false, the screen says the mail settings are not working, and the
+    session stays held — a factor that switched itself off when mail broke
+    would be a factor anybody could switch off by breaking mail.
+  - **"Send test code" on Users & Access sends a real code, now.** `MAIL_*`
+    is configuration nobody can verify by reading it and an address is typed
+    by hand; with no way to test either, the first proof that both are right
+    would be an employee who cannot sign in and an administrator who cannot
+    tell which of the two is wrong.
+  - **The address is proved by use, not by assertion.**
+    `otp_email_verified_at` is set the first time a code sent there is
+    answered correctly — the only evidence the inbox is really the person's
+    and was typed without a slip. Changing the address clears both the flag
+    and any outstanding code, which would otherwise be a live credential
+    pointing at an inbox that is no longer this account's.
+  - **The code is hashed, never stored**, so a database dump proves only that
+    somebody was mid-login rather than handing over working second factors.
+    Two minutes to live, five wrong answers burn it (rather than locking the
+    account — locking would hand anybody who knows a username a way to keep
+    its owner out), 45 seconds between resends, and both endpoints throttled
+    on top of that.
+  - **The hold is on the session, not the account**, so a second machine is
+    asked again and signing out forgets it. `RequireOtp` runs *before*
+    `RequirePasswordChange` and the privacy hold: a session that has not
+    cleared its factor should not be able to change the account's password or
+    accept anything on its behalf. It allows exactly four routes through —
+    the screen, the two actions, and logout, because trapping somebody in a
+    session they cannot leave is worse than the risk being managed.
+  - **`otp_sent`, `otp_passed` and `otp_failed` are audit events**, written
+    by the service so the resend path and the middleware's first-request send
+    cannot each grow their own copy. The row carries the *masked* address and
+    never the code.
+  - **No SMS, deliberately.** A `SmsSender` with Semaphore and Twilio drivers
+    was built once and removed: every gateway reachable from the Philippines
+    is prepaid, so the channel has a running cost and a day it silently stops
+    working — and two accounts on this system had no phone number at all,
+    including the administrator's.
   - **A company login should not hang off a personal inbox**, which is the
     reason for the username. The role already lives on the account, so
-    `admin@primepower.test` and `hrstaff@primepower.test` say who is signing in
+    `admin@primepower.com` and `hrstaff@primepower.com` say who is signing in
     and what they may open.
   - **A login account has no email, and nothing on the web side sends mail.**
     The forgot-password link, the emailed reset flow (`Features::resetPasswords`,
@@ -1916,15 +2385,31 @@ behind `viewSensitive`). What follows is the layer underneath them.
     form no longer needs one to create an account and no longer copies it onto
     `users`; the 201 file's email field is untouched.
   - **A username is shaped like a company address and is not one.** Every
-    username ends in `@primepower.test` (`User::USERNAME_DOMAIN`) — the seeded
-    role logins are `admin@`, `hrstaff@` and `employee@primepower.test` — and
+    username ends in `@primepower.com` (`User::USERNAME_DOMAIN`) — it was
+    `.test`, the reserved local-development suffix, and moved to `.com` on
+    request by migration
+    `2026_09_17_000001_move_usernames_to_the_com_domain`, which rewrites the
+    suffix on every existing row. It has to: a username *is* the credential,
+    so an account whose domain did not move could not sign in at all once the
+    constant changed. There is a second reason now — a `.test` username sitting
+    beside a real Gmail in the same row reads as a mistake, and somebody would
+    eventually type it into a mail client. The seeded
+    role logins are `admin@`, `hrstaff@` and `employee@primepower.com` — and
     nothing is ever mailed to it. Migration
     `2026_09_13_000003_give_usernames_the_company_domain` gave existing
     usernames the domain and renamed `hr` to `hrstaff`. Users & Access accepts
-    `nina` or `nina@primepower.test` and stores the second (`User::withDomain()`).
+    `nina` or `nina@primepower.com` and stores the second (`User::withDomain()`).
+  - **A company username is *suggested* from the connected inbox, never
+    derived from it.** `User::suggestUsernameFromEmail()` takes the local part
+    up to the first dot, plus-tag or digit — `johnpogs.b@gmail.com` gives
+    `johnpogs` — and the edit form offers it as a button beside the field.
+    It is a suggestion because `johnpogs.b` could reasonably become
+    `johnpogs`, `john` or `jbenavidez`, and **what a person is called at work
+    is not in their email address**. Deriving it silently would name people
+    by accident.
   - **Every account gets a username however it was created.**
     `User::usernameFor()` makes one from the name — Juan Dela Cruz becomes
-    `jdelacruz@primepower.test`, numbered if taken — which the employee form and the
+    `jdelacruz@primepower.com`, numbered if taken — which the employee form and the
     seeder use; Users & Access takes one typed in, or makes it from the name
     when left blank. `User::booted()` fills a blank one on `creating` so no
     path can make a login that cannot sign in. An explicit username is kept.
@@ -2144,15 +2629,39 @@ behind `viewSensitive`). What follows is the layer underneath them.
   for its key before a user is resolved, and keying off a null user silently
   drops every token into one shared per-address bucket. Ceiling is
   `sanctum.rate_limit` (60/min), far above a device's real use.
-- The Security screen's log **defaults to record changes, not everything**.
-  Sign-ins vastly outnumber edits and the window is 50 rows, so an unfiltered
-  view would push every change off the screen by mid-morning.
+- **The audit trail is its own screen — `/settings/audit-logs`, under
+  Administration — and no longer 50 rows at the bottom of Settings →
+  Security.** That was the wrong place twice over: Security is where a person
+  manages their own password, and a 50-row window answers "what happened in the
+  last hour" and nothing else. "Who opened this employee's file in August"
+  needs a date range, a person, and pages, so the screen has all three. Security
+  keeps the door, not the window.
+  - **It still defaults to record changes.** Sign-ins vastly outnumber edits,
+    so an unfiltered first view would push every change off the page by
+    mid-morning. The four groups — changes, sign-ins, reads & exports,
+    everything — are the three writers of this table (`Auditable`,
+    `RecordAuthenticationEvents`, `DataAccessLogger`) plus the union, because
+    each is read for a different reason.
+  - **The event dropdown is read from the table, not hard-coded.** Three
+    services write events here and a fourth will; a list maintained by hand is
+    a list that quietly stops offering the newest event.
+  - The tiles count the **whole range** rather than the filtered group, so
+    switching group does not move the totals underneath the reader — and each
+    one links to the rows it counted.
+  - **Verify integrity moved with the log**, since the answer is about these
+    rows; still `throttle:6,1`, because it reads the whole table.
+  - **The CSV export writes its own `exported` row before handing the file
+    over.** It carries attempted usernames, addresses and who read what — an
+    audit trail whose export leaves no trace is missing the one event it exists
+    to record.
 - **API tokens expire** — `config/sanctum.php` sets a year, where Sanctum's own
   default is never. These are unattended machine credentials on biometric
   devices; an expiry short enough to be inconvenient is one that gets worked
   around by never rotating. Sanctum measures from `created_at`, so the setting
   reaches tokens already issued.
-- **Ten minutes of nobody being there signs the session out.**
+- **Five minutes of nobody being there signs the session out.** It was ten;
+  the owner asked for five, and the reasoning below only gets stronger as the
+  window shrinks.
   `config('session.lifetime')` is the whole enforcement — Laravel refreshes
   `last_activity` on every request, so it is a true idle window rather than a
   fixed expiry, and it holds whether or not any JavaScript is running. Short on
@@ -2183,7 +2692,7 @@ behind `viewSensitive`). What follows is the layer underneath them.
   - **The number is shared, never restated.** `HandleInertiaRequests` publishes
     `idle.timeout` from the same config the server expires on. Two copies would
     drift the first time one was tuned, and silently in the worst direction: a
-    screen counting down from ten against a session that died at five.
+    screen counting down from five against a session that died at three.
   - **A 419 now lands on the login screen too.** The timeout cannot cover the
     case it exists for — a tab whose session Laravel expired with no browser
     running — and the first click after that used to open Inertia's black
@@ -2270,7 +2779,7 @@ container start** — storage link, then (with `RUN_MIGRATIONS=true`) migrate an
 - **`hris:set-admin-password` is the way back in without a terminal.** With no
   emailed reset and no shell on the host, a lost admin password had no
   recovery at all. `HRIS_ADMIN_PASSWORD` in the panel is applied by `start.sh`
-  to `admin@primepower.test` (created if missing), flagged
+  to `admin@primepower.com` (created if missing), flagged
   `must_change_password`, tokens revoked. **Applied once per value**: an HMAC
   of the value under `APP_KEY` is stored in `settings` as
   `security.admin_password_applied`, so a restart with the variable still set
@@ -2364,6 +2873,15 @@ container start** — storage link, then (with `RUN_MIGRATIONS=true`) migrate an
   no code had changed. Anything a test reads out of the environment rather than
   out of the code is a test that passes by coincidence — the same shape as the
   hard-coded date in `SecurityTest` further up this list.
+- **A wrong column name passes on SQLite and fails on Postgres**, which is the
+  same trap as `ilike` with the failure the other way round. SQLite accepts a
+  double-quoted identifier it cannot resolve **as a string literal**, so
+  `where('document_number', $x)` against a table that has no such column
+  compiles to `'document_number' = '...'` — always false, never an error. The
+  anomaly check that did this shipped green through 1,000 SQLite tests and
+  threw `SQLSTATE[42703]` the moment the suite ran on Postgres. Anything that
+  names a column the schema does not have is invisible until
+  `composer test:pgsql`, which is the reason that command exists.
 - **`ilike` is Postgres-only.** Tests run on SQLite — pick the operator from
   `getDriverName()`, as `Employee::scopeSearch` does.
 - **Factory sequences.** Batch `create()` runs every `definition()` before the
@@ -2433,8 +2951,8 @@ its primary key. Adding a foreign key means deciding which of those two cases
 it is.
 
 Seed accounts (password `password` **on a local machine only** — see below)
-sign in by **username**: `admin@primepower.test`, `hrstaff@primepower.test`, and
-`employee@primepower.test` —
+sign in by **username**: `admin@primepower.com`, `hrstaff@primepower.com`, and
+`employee@primepower.com` —
 a rank-and-file login with a supervisor above it, so the self-service half (own
 payslip, own leave, own 201 file) and the approval routing can both be
 exercised. The supervisor accounts are the seeded department heads, with
@@ -2455,9 +2973,44 @@ of payroll reads finalised runs only, so a run left at `for_approval` leaves
 13th-month pay, compliance, final pay, and every employee's payslip screen
 empty on a fresh install — which looks broken rather than pending.
 
+## Emptying the demonstration data
+
+**`php artisan hris:reset-demo-data`** deletes the seeded workforce and
+everything filed against it. The seeded 42 employees are what make a fresh
+clone worth looking at and exactly what has to go before the first real
+employee is filed; doing it by hand is thirty-odd tables in an order the
+foreign keys care about, and `migrate:fresh` takes the schema and the only
+login with it.
+
+- **It refuses to run without `--force`** and prints what it *would* delete
+  instead. A command that empties a payroll system on a typo is a command
+  nobody should have written.
+- **What survives is short and deliberate**: the administrator's own login
+  (there is no terminal on the deployment host and no emailed reset, so an
+  account-less database is a locked door), the company settings, and the master
+  data nothing can be keyed without — leave types, shifts, holidays.
+  Departments, positions and clients go, because they are seeded examples
+  rather than this company's.
+- **The audit trail is cleared, and the clearing is the one row that
+  survives** — a `demo_data_reset` entry naming who ran it and how many rows
+  went. A trail that goes silent about the moment it was emptied is missing the
+  one event it most needs to record. `--keep-audit` leaves it alone.
+- `Setting::flushCache()` runs afterwards: the settings map is cached forever,
+  and reading it after the rows underneath have gone is how a wiped system
+  keeps reporting a company that is no longer there.
+- **Every screen was checked against the empty database** — 49 of them, all
+  200 — because a wipe is exactly when a division by a zero headcount or a
+  `->first()->name` shows up. Two "failures" were the design working:
+  `/hr/my-profile` redirects with a message for an account that has no 201
+  file, and the 13th-month path is `/hr/payroll/13th-month`.
+- **The local database was dumped first**
+  (`storage/app/backups/full-before-demo-reset-*.dump`). Note that **pg_dump 16
+  on this machine cannot run** — it dies on a missing CRT DLL under both Git
+  Bash and PowerShell; the 18 binary works and reads the 16 server fine.
+
 ## Known gaps
 
-Time & Attendance is removed pending a redesign (see its section). Still outstanding: separation pay for
+Still outstanding: separation pay for
 authorised causes (deliberately left to HR, see Payroll above); peer and
 subordinate reviews are supported by the schema and scoring but have no
 assignment UI (only self and supervisor are created at rollout); email

@@ -172,7 +172,6 @@ export default function Salaries({ adjustments, filters, reasons, summary, emplo
             <Card>
                 <CardHeader
                     title="Salary history"
-                    description="Payroll reads the rate in force over the period it is paying, so a raise recorded late never rewrites a run that already closed."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Select

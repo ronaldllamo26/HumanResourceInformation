@@ -66,7 +66,75 @@ return [
             'https://generativelanguage.googleapis.com/v1beta',
         ),
 
-        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash'),
+        /*
+        | Measured rather than chosen: on the day this was set,
+        | `gemini-3.5-flash` answered 503 UNAVAILABLE on every attempt while
+        | this one answered in 1.8s on the same key. Both exist and both take
+        | images — the difference was load, and load is not something a
+        | default can be right about for long, which is what the chain below
+        | is for.
+        */
+        'model' => env('GEMINI_MODEL', 'gemini-3.6-flash'),
+
+        /*
+        | Tried in order when the model above is busy.
+        |
+        | **This is the fix for the failure the retries could not fix.** The
+        | free tier shares one pool per model, so a congested model answers
+        | 503 to every attempt — retrying it four times is four ways of
+        | hearing the same no, and that is exactly how the scanner went dark:
+        | "attempts_exhausted" in the log, a dead Scan button on the form, and
+        | a key and model that were both perfectly valid.
+        |
+        | A *different* model is a different pool. Only tried on 429/5xx and a
+        | connection failure: a 400 (rejected schema) or a 401 (bad key) is an
+        | answer, and asking a second model the same rejected question wastes
+        | the person's time arriving at the same place.
+        |
+        | Every entry must take an image and honour `responseJsonSchema`, or
+        | the fallback is a slower way to fail. `php artisan scanner:check`
+        | reports which one answered.
+        |
+        | **The chain also raises the daily ceiling, which is the larger half
+        | of what it buys.** The free tier is 20 requests a day and 5 a minute
+        | counted *per model* — Google's 429 names both quotas and carries the
+        | model in `quotaDimensions` — and a 429 is treated as "move on" here
+        | exactly like a 503. Six separate pools is therefore up to ~120 scans
+        | a day rather than 20.
+        |
+        | **Every entry was tested against the request this driver really
+        | sends** — a real image plus `responseJsonSchema` — and read a test
+        | licence correctly. Being in `ListModels` is not enough and has
+        | already misled twice: `gemini-2.5-flash` answers 404 "no longer
+        | available to new users", and `gemini-3.5-flash-lite` and
+        | `gemini-flash-lite-latest` answer 400 even for a one-word text
+        | request.
+        |
+        | **Two models are left out because they are aliases of entries
+        | already here**, and an alias shares the pool rather than adding one:
+        | `gemini-3.8-flash` is what `gemini-flash-latest` resolves to, and
+        | `gemini-3.1-flash-lite-preview` resolves to `gemini-3.1-flash-lite`.
+        | Both were confirmed by reading `modelVersion` off a real answer.
+        | `geminiModels()` de-duplicates by *name*, so it cannot see either —
+        | listing one would quietly spend a slot on nothing.
+        |
+        | **`gemini-3.1-flash-lite` sits last, deliberately.** It answers on a
+        | separate quota from the full "flash" line above, so it is genuine
+        | extra headroom rather than a fourth attempt at the same congested
+        | pool — but "lite" is a smaller model, so it is the *last* resort
+        | rather than a peer: a full flash model reads a photographed ID
+        | better than a lite one, and this chain should only reach for the
+        | smaller reading after every full model has already said no. Its own
+        | daily cap is deliberately unmeasured, because reading it means
+        | spending the one model kept in reserve.
+        */
+        'fallback_models' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env(
+                'GEMINI_FALLBACK_MODELS',
+                'gemini-3.7-flash,gemini-3.5-flash,gemini-flash-latest,gemini-3-flash-preview,gemini-3.1-flash-lite',
+            )),
+        ))),
 
         // Nothing to load into VRAM here, so the long cold-start allowance
         // Ollama needs does not apply — but a large scan still has to upload.
@@ -78,7 +146,15 @@ return [
         | single attempt is a coin toss. Only 429 and 5xx are retried; a wrong
         | key fails on the first try, as it should.
         */
-        'retries' => (int) env('GEMINI_RETRIES', 3),
+        /*
+        | Two attempts per model, not four.
+        |
+        | It was three retries against one model, which spent 22 seconds
+        | discovering that a busy model is busy. The recovery is the fallback
+        | list above — a second pool rather than a fourth knock on the same
+        | door — so each model gets one retry and the chain moves on.
+        */
+        'retries' => (int) env('GEMINI_RETRIES', 2),
         'retry_delay_ms' => (int) env('GEMINI_RETRY_DELAY_MS', 1500),
 
         'timeout' => (int) env('GEMINI_TIMEOUT', 60),
@@ -156,16 +232,32 @@ return [
     'model' => env('SCANNER_MODEL', 'claude-opus-5'),
 
     /*
-    | Images only. A PDF or DOCX upload skips the scanner rather than failing
-    | — the document still uploads, HR just types the fields.
+    | Images and PDFs. A DOCX upload still skips the scanner — the document
+    | uploads, HR just types the fields.
+    |
+    | Gemini accepts `application/pdf` natively, so a PDF goes straight
+    | through without conversion. For the Anthropic and OpenRouter drivers
+    | (image-only endpoints), the first page is rendered to a JPEG via
+    | Imagick before being sent — see DocumentScanner::pdfToImage().
     */
-    'accepts' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+    'accepts' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'],
 
     /*
     | 5 MB of raw image is roughly 6.7 MB base64-encoded, well inside the
-    | request limit. Bigger scans are refused before they cost a request.
+    | request limit. A multi-page PDF can be larger, but is capped at
+    | `max_pages` pages and the converted image stays under this size.
     */
-    'max_bytes' => 5 * 1024 * 1024,
+    'max_bytes' => 10 * 1024 * 1024,
+
+    /*
+    | PDF handling. Only the first page is read — a 201-file document is
+    | one page, and a multi-page employment contract carries the fields
+    | (name, dates, position) on its first. Sending more pages costs more
+    | tokens for no extra signal on the kinds of paper this system files.
+    */
+    'pdf' => [
+        'max_pages' => (int) env('SCANNER_PDF_MAX_PAGES', 2),
+    ],
 
     /*
     | What each type looks like, in the model's own terms. Keys must match
@@ -502,6 +594,28 @@ return [
     | Switch `enabled` off and the batch filer behaves exactly as it did —
     | propose everything, file nothing until somebody confirms.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Learning from HR's corrections
+    |--------------------------------------------------------------------------
+    |
+    | The scanner keeps every proposal and what the document was actually
+    | filed as, and `ScannerCorrectionMemory` turns those into heading -> type
+    | rules the classifier reads on the next scan. No model is retrained and
+    | nothing extra is sent to the provider: the rules are applied in PHP.
+    |
+    | `min_confirmations` is why two people filing the same paper differently
+    | cannot teach the system anything — a heading needs the same answer this
+    | many times, and one disagreement removes it entirely.
+    |
+    */
+    'learning' => [
+        'enabled' => (bool) env('SCANNER_LEARNING', true),
+        'min_confirmations' => 2,
+        'lookback_days' => 365,
+        'max_rules' => 50,
+    ],
+
     'autofile' => [
         'enabled' => (bool) env('SCANNER_AUTOFILE', true),
 
@@ -518,6 +632,25 @@ return [
          * wrong.
          */
         'match_strengths' => ['number', 'name'],
+
+        /*
+         * Hold a row whose reading argues with itself — a future issue date,
+         * an expiry before the issue, an underage clearance, a number already
+         * filed under another document.
+         *
+         * These are warnings on the upload form, where somebody reads them and
+         * decides. Unattended there is nobody to read them, and filing a
+         * reading that contradicts itself stores the contradiction as a fact.
+         */
+        'hold_anomalies' => (bool) env('SCANNER_AUTOFILE_HOLD_ANOMALIES', true),
+
+        /*
+         * Hold a government ID whose number is not the shape its agency
+         * prints. Same reasoning: on the form it is a warning a person
+         * overrides for real numbers that fail a format rule, and with nobody
+         * looking it is as likely to be a misread digit.
+         */
+        'hold_failed_id_check' => (bool) env('SCANNER_AUTOFILE_HOLD_FAILED_ID', true),
 
         /*
          * The type must be *certain* — settled by a number already on the 201

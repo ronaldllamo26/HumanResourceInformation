@@ -82,7 +82,6 @@ export default function Separation({ separation, can }) {
                     <Card>
                         <CardHeader
                             title="Final pay computation"
-                            description="Snapshotted when opened — a later change to salary, leave, or a loan will not rewrite it."
                             action={
                                 <Badge variant={STATUS_VARIANT[separation.status] ?? 'default'}>
                                     {titleCase(separation.status)}
@@ -129,10 +128,7 @@ export default function Separation({ separation, can }) {
 
                     {can.update && (
                         <Card>
-                            <CardHeader
-                                title="Adjust and recompute"
-                                description="Recomputes against today's payroll, leave, and loan figures."
-                            />
+                            <CardHeader title="Adjust and recompute" />
                             <CardBody>
                                 <form
                                     onSubmit={recompute}
@@ -214,10 +210,7 @@ export default function Separation({ separation, can }) {
                     </Card>
 
                     <Card>
-                        <CardHeader
-                            title="Clearance"
-                            description="Blocking items must be signed off before release. The rest are recorded only."
-                        />
+                        <CardHeader title="Clearance" />
                         <CardBody className="space-y-1">
                             {separation.clearance.map((item) => (
                                 <button

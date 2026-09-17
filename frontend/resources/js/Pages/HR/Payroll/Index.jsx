@@ -74,7 +74,6 @@ export default function Index({ periods, suggestion, filters, can }) {
                     nobody can explain. */}
                 <CardHeader
                     title="Payroll Periods"
-                    description="Each period holds one run. A run is computed, submitted, approved, then paid."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                             {filters?.run_status && (

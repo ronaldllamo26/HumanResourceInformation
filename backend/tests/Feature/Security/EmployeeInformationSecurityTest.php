@@ -22,9 +22,9 @@ class EmployeeInformationSecurityTest extends TestCase
 
     public function test_a_deactivated_account_cannot_sign_in_on_the_web(): void
     {
-        User::factory()->inactive()->create(['username' => 'gone@primepower.test']);
+        User::factory()->inactive()->create(['username' => 'gone@primepower.com']);
 
-        $this->post('/login', ['username' => 'gone@primepower.test', 'password' => 'password'])
+        $this->post('/login', ['username' => 'gone@primepower.com', 'password' => 'password'])
             ->assertSessionHasErrors(['username' => 'This account has been deactivated. Contact HR if you think this is a mistake.']);
 
         $this->assertGuest();
@@ -33,17 +33,17 @@ class EmployeeInformationSecurityTest extends TestCase
     /** The "deactivated" wording must not tell a guesser the account exists. */
     public function test_a_wrong_password_on_a_deactivated_account_gets_the_ordinary_error(): void
     {
-        User::factory()->inactive()->create(['username' => 'gone@primepower.test']);
+        User::factory()->inactive()->create(['username' => 'gone@primepower.com']);
 
-        $this->post('/login', ['username' => 'gone@primepower.test', 'password' => 'wrong-password'])
+        $this->post('/login', ['username' => 'gone@primepower.com', 'password' => 'wrong-password'])
             ->assertSessionHasErrors(['username' => trans('auth.failed')]);
     }
 
     public function test_a_refused_deactivated_sign_in_is_audited(): void
     {
-        $user = User::factory()->inactive()->create(['username' => 'gone@primepower.test']);
+        $user = User::factory()->inactive()->create(['username' => 'gone@primepower.com']);
 
-        $this->post('/login', ['username' => 'gone@primepower.test', 'password' => 'password']);
+        $this->post('/login', ['username' => 'gone@primepower.com', 'password' => 'password']);
 
         $this->assertDatabaseHas('audit_logs', ['event' => 'login_failed', 'auditable_id' => $user->id]);
     }

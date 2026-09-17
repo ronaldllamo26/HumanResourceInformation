@@ -23,13 +23,20 @@
          * A card is a sheet laid on that, and a sheet is lighter than what it
          * covers.
          */
-        --card: 206 60% 99.2%;
+        /* #EDF5FB — the brand palette names this the card colour, which is
+           a step *darker* than the page rather than lighter. Asked for and
+           applied deliberately: it is the same value as --sidebar, so a card
+           and the sidebar read as one material and the page reads as the
+           surface they sit on. The dark block does the conventional thing
+           (card lighter than page), which is the palette's own choice too. */
+        --card: 206 63.6% 95.7%;
         --card-foreground: 212 64.3% 11%;
 
-        --popover: 206 60% 99.2%;
+        --popover: 206 63.6% 95.7%;
         --popover-foreground: 212 64.3% 11%;
 
-        --primary: 203 100% 40%;
+        /* #007DCC exactly, per the palette table. */
+        --primary: 203.2 100% 40%;
         --primary-foreground: 45 28.6% 97.3%;
 
         --secondary: 204 58.8% 93.3%;
@@ -93,6 +100,26 @@
          * A sidebar drawn in bright blue rules was the result.
          */
         --sidebar-border: 206 30% 72%;
+
+        /*
+         * The sign-in hero — the one surface that commits to a single look in
+         * both modes, which is why its four values are identical in the light
+         * and dark blocks below.
+         *
+         * A signed-out visitor has not chosen a theme yet: the panel is the
+         * company's front door, and a front door that is deep navy at night
+         * and pale blue by day is two different buildings. The navy is the
+         * logo's own globe outline, so the artwork sits on it rather than in
+         * front of it, and the accent is the wordmark's red.
+         *
+         * Not `--primary` on purpose. Primary is a *control* colour: in dark
+         * mode it lightens and pairs with a near-black foreground, which is
+         * right for a button and wrong for a page-height panel of prose.
+         */
+        --hero: 208.7 43.4% 10.4%;
+        --hero-foreground: 207 47.4% 92.5%;
+        --hero-muted: 206 22.7% 64.5%;
+        --hero-accent: 0 68.8% 54.7%;
 
         --logo-primary: 0 68.8% 54.7%;
         --logo-subtitle: 0 9.1% 4.3%;
@@ -172,6 +199,12 @@
         --sidebar-accent-foreground: 203 78.2% 55.1%;
         --sidebar-muted: 206 22.7% 64.5%;
         --sidebar-border: 206 22.7% 64.5%;
+
+        /* Deliberately the same four values as the light block: see there. */
+        --hero: 208.7 43.4% 10.4%;
+        --hero-foreground: 207 47.4% 92.5%;
+        --hero-muted: 206 22.7% 64.5%;
+        --hero-accent: 0 68.8% 54.7%;
 
         --logo-primary: 0 68.8% 54.7%;
         /* #0c0a0a reads fine in light mode (18:1) but was ~1.1:1 on the dark

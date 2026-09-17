@@ -10,7 +10,7 @@ use Illuminate\Database\Seeder;
 class DatabaseSeeder extends Seeder
 {
     /**
-     * Generated logins, keyed by email, printed once when the seed finishes.
+     * Generated logins, keyed by username, printed once when the seed finishes.
      *
      * Only ever populated outside local and testing — see seededPassword().
      *
@@ -27,7 +27,6 @@ class DatabaseSeeder extends Seeder
 
         $this->seedAdminUsers();
         $this->seedEmployees();
-        $this->seedSupervisorUser();
         $this->seedSelfServiceUser();
 
         // Needs employees: it creates the clients, then splits the workforce
@@ -69,21 +68,22 @@ class DatabaseSeeder extends Seeder
      * reportIssuedPasswords(), and is flagged must_change_password so the
      * console output stops being a working credential the moment it is used.
      */
-    private function seededPassword(string $email): string
+    private function seededPassword(string $username): string
     {
-        if (app()->environment('local', 'testing') || env('SEED_DEFAULT_PASSWORD', true)) {
+        if (app()->environment('local', 'testing')) {
             return 'password';
         }
 
-        return $this->issued[$email] ??= User::generatePassword();
+        return $this->issued[$username] ??= User::generatePassword();
     }
 
+    /**
+     * Whether a seeded login has to replace its password before it can do
+     * anything. False on a development machine, where forcing the change
+     * would defeat the point of having fixed seed accounts at all.
+     */
     private function passwordIsProvisional(): bool
     {
-        if (env('SEED_DEFAULT_PASSWORD', true)) {
-            return false;
-        }
-
         return ! app()->environment('local', 'testing');
     }
 
@@ -103,8 +103,8 @@ class DatabaseSeeder extends Seeder
         $this->command?->newLine();
         $this->command?->warn('Seeded logins — shown once, and each must be changed at first sign-in:');
 
-        foreach ($this->issued as $email => $password) {
-            $this->command?->line(sprintf('  %-34s %s', $email, $password));
+        foreach ($this->issued as $username => $password) {
+            $this->command?->line(sprintf('  %-34s %s', $username, $password));
         }
 
         $this->command?->newLine();
@@ -113,61 +113,29 @@ class DatabaseSeeder extends Seeder
     private function seedAdminUsers(): void
     {
         $accounts = [
-            ['name' => 'System Administrator', 'username' => 'admin', 'email' => 'admin@primepower.test', 'role' => User::ROLE_ADMIN],
-            ['name' => 'Maria Santos', 'username' => 'hr', 'email' => 'hr@primepower.test', 'role' => User::ROLE_HR_STAFF],
+            ['name' => 'System Administrator', 'username' => 'admin@primepower.com', 'role' => User::ROLE_ADMIN],
+            ['name' => 'Maria Santos', 'username' => 'hrstaff@primepower.com', 'role' => User::ROLE_HR_STAFF],
         ];
 
+        $adminOtpEmail = env('ADMIN_OTP_EMAIL');
+
         foreach ($accounts as $account) {
+            $data = [
+                'name' => $account['name'],
+                'role' => $account['role'],
+                'password' => $this->seededPassword($account['username']),
+                'is_active' => true,
+                'must_change_password' => $this->passwordIsProvisional(),
+            ];
+
+            if ($account['role'] === User::ROLE_ADMIN && filled($adminOtpEmail)) {
+                $data['otp_email'] = strtolower(trim((string) $adminOtpEmail));
+            }
+
             User::updateOrCreate(
                 ['username' => $account['username']],
-                [
-                    'name' => $account['name'],
-                    'email' => $account['email'],
-                    'role' => $account['role'],
-                    'password' => $this->seededPassword($account['email']),
-                    'is_active' => true,
-                    'email_verified_at' => now(),
-                    'must_change_password' => $this->passwordIsProvisional(),
-                ],
+                $data,
             );
-        }
-    }
-
-    /**
-     * A designated supervisor login for role-based testing and sign-in.
-     */
-    private function seedSupervisorUser(): void
-    {
-        $existing = User::where('username', 'supervisor')
-            ->orWhere('email', 'supervisor@primepower.test')
-            ->first();
-
-        if ($existing && Employee::where('user_id', $existing->id)->exists()) {
-            return;
-        }
-
-        $employee = Employee::whereHas('subordinates')
-            ->whereNull('user_id')
-            ->orderBy('id')
-            ->first() ?? Employee::whereHas('subordinates')->orderBy('id')->first();
-
-        $name = $employee ? $employee->full_name : 'Department Supervisor';
-
-        $user = User::updateOrCreate(
-            ['username' => 'supervisor'],
-            [
-                'name' => $name,
-                'email' => 'supervisor@primepower.test',
-                'role' => User::ROLE_SUPERVISOR,
-                'password' => $this->seededPassword('supervisor@primepower.test'),
-                'is_active' => true,
-                'email_verified_at' => now(),
-                'must_change_password' => $this->passwordIsProvisional(),
-            ],
-        );
-
-        if ($employee && ! $employee->user_id) {
-            $employee->update(['user_id' => $user->id]);
         }
     }
 
@@ -184,9 +152,7 @@ class DatabaseSeeder extends Seeder
      */
     private function seedSelfServiceUser(): void
     {
-        $existing = User::where('username', 'employee')
-            ->orWhere('email', 'employee@primepower.test')
-            ->first();
+        $existing = User::where('username', 'employee@primepower.com')->first();
 
         // Already linked. Re-running must not hand the same login a second
         // employee record — one user, one 201 file.
@@ -204,14 +170,12 @@ class DatabaseSeeder extends Seeder
         }
 
         $user = User::updateOrCreate(
-            ['username' => 'employee'],
+            ['username' => 'employee@primepower.com'],
             [
                 'name' => $employee->full_name,
-                'email' => 'employee@primepower.test',
                 'role' => User::ROLE_EMPLOYEE,
-                'password' => $this->seededPassword('employee@primepower.test'),
+                'password' => $this->seededPassword('employee@primepower.com'),
                 'is_active' => true,
-                'email_verified_at' => now(),
                 'must_change_password' => $this->passwordIsProvisional(),
             ],
         );
@@ -240,13 +204,14 @@ class DatabaseSeeder extends Seeder
                 'basic_salary' => 65000,
             ]);
 
+            $username = User::usernameFor($employee->first_name, $employee->last_name);
+
             $user = User::create([
                 'name' => $employee->full_name,
-                'email' => $employee->email,
+                'username' => $username,
                 'role' => User::ROLE_SUPERVISOR,
-                'password' => $this->seededPassword($employee->email),
+                'password' => $this->seededPassword($username),
                 'is_active' => true,
-                'email_verified_at' => now(),
                 'must_change_password' => $this->passwordIsProvisional(),
             ]);
 

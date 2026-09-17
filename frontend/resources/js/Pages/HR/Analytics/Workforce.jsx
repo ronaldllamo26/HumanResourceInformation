@@ -97,10 +97,7 @@ export default function Workforce({
             <div className="mb-6 grid gap-6 lg:grid-cols-2">
                 {/* Monthly Movement Trend */}
                 <Card>
-                    <CardHeader
-                        title="Workforce Movement (Last 6 Months)"
-                        description="Monthly joiners vs separations."
-                    />
+                    <CardHeader title="Workforce Movement (Last 6 Months)" />
                     <CardBody>
                         <div className="space-y-4">
                             {monthlyMovement.map((row) => (
@@ -149,10 +146,7 @@ export default function Workforce({
 
                 {/* Tenure Distribution */}
                 <Card>
-                    <CardHeader
-                        title="Tenure Distribution"
-                        description="Length of service across current active personnel."
-                    />
+                    <CardHeader title="Tenure Distribution" />
                     <CardBody>
                         <div className="space-y-3.5">
                             {tenureBrackets.map((bracket) => (
@@ -184,7 +178,6 @@ export default function Workforce({
                 <Card>
                     <CardHeader
                         title="Deployment Allocation"
-                        description="Where manpower is deployed."
                         action={
                             <Link
                                 href="/hr/clients"
@@ -221,10 +214,7 @@ export default function Workforce({
 
                 {/* Department Distribution */}
                 <Card>
-                    <CardHeader
-                        title="Department Headcount"
-                        description="Staff distribution by department."
-                    />
+                    <CardHeader title="Department Headcount" />
                     <CardBody>
                         <div className="space-y-3">
                             {departmentHeadcounts.map((dept) => (
@@ -247,10 +237,7 @@ export default function Workforce({
 
                 {/* Demographics & Status */}
                 <Card>
-                    <CardHeader
-                        title="Workforce Demographics"
-                        description="Gender and contract status breakdown."
-                    />
+                    <CardHeader title="Workforce Demographics" />
                     <CardBody className="space-y-4">
                         <div>
                             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

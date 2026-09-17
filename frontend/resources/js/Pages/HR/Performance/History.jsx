@@ -108,20 +108,14 @@ export default function History({ employee, history, weights }) {
 
             <div className="grid gap-5 lg:grid-cols-2">
                 <Card>
-                    <CardHeader
-                        title="Performance Trend"
-                        description="Composite score for each completed cycle."
-                    />
+                    <CardHeader title="Performance Trend" />
                     <CardBody>
                         <TrendChart history={history} />
                     </CardBody>
                 </Card>
 
                 <Card>
-                    <CardHeader
-                        title="360 Breakdown"
-                        description="How each perspective scored, and how much it counts."
-                    />
+                    <CardHeader title="360 Breakdown" />
                     <CardBody>
                         {history.length === 0 ? (
                             <div className="flex flex-col items-center gap-2 py-8 text-center">

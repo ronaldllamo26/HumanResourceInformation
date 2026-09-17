@@ -47,7 +47,6 @@ export default function ClientTimesheets({ periods, period, clients }) {
             <Card>
                 <CardHeader
                     title={period ? `Timesheets · ${period.name}` : 'Client Timesheets'}
-                    description="For each client, the attendance of the staff deployed there — prepared from the time records, sent to the client, and confirmed or disputed by them."
                     action={
                         periods.length > 0 && (
                             <Select

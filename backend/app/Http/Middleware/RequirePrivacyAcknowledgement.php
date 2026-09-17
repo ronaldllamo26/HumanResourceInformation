@@ -24,10 +24,14 @@ class RequirePrivacyAcknowledgement
     private const ALLOWED = [
         'privacy.notice',
         'privacy.acknowledge',
+        'otp.challenge',
+        'otp.verify',
+        'otp.resend',
         'logout',
         'logout.idle',
         'session.keepalive',
     ];
+
 
     public function handle(Request $request, Closure $next): Response
     {

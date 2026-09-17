@@ -46,14 +46,10 @@ export default function Integrations({ tokens, endpoints, biometric }) {
     };
 
     return (
-        <SettingsLayout
-            title="Integrations"
-            description="API tokens and the outside systems this HRIS talks to."
-        >
+        <SettingsLayout title="Integrations">
             <Card>
                 <CardHeader
                     title="API Tokens"
-                    description="Sent as an Authorization: Bearer header. Only a hash is stored, so a token is shown once."
                     action={
                         <Button onClick={() => setCreateOpen(true)}>
                             <Plus className="h-4 w-4" />
@@ -128,10 +124,7 @@ export default function Integrations({ tokens, endpoints, biometric }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Biometric Device"
-                    description="Two ways to get punches in: push them to the API, or upload the device's export."
-                />
+                <CardHeader title="Biometric Device" />
                 <CardBody className="space-y-4">
                     <div className="flex items-start gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -170,10 +163,7 @@ export default function Integrations({ tokens, endpoints, biometric }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Available Endpoints"
-                    description="What the REST API currently exposes. Every response is scoped by the token holder's role."
-                />
+                <CardHeader title="Available Endpoints" />
                 <CardBody>
                     <ul className="divide-y divide-border">
                         {endpoints.map((endpoint) => (

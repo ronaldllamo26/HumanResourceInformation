@@ -171,11 +171,11 @@ class AuthenticationAuditTest extends TestCase
         // Signing in is itself an auth entry, and the factory create above is
         // a record change.
         $this->actingAs($admin)
-            ->get('/settings/security')
+            ->get('/settings/audit-logs')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->where('auditFilter', 'changes')
-                ->where('auditLog', fn ($log) => collect($log)->every(
+                ->where('filters.group', 'changes')
+                ->where('entries.data', fn ($log) => collect($log)->every(
                     fn ($entry) => $entry['is_auth'] === false,
                 )),
             );
@@ -188,11 +188,11 @@ class AuthenticationAuditTest extends TestCase
         $this->actingAs($admin)->post('/logout');
 
         $this->actingAs($admin)
-            ->get('/settings/security?audit=auth')
+            ->get('/settings/audit-logs?group=auth')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->where('auditFilter', 'auth')
-                ->where('auditLog', fn ($log) => count($log) > 0 && collect($log)->every(
+                ->where('filters.group', 'auth')
+                ->where('entries.data', fn ($log) => count($log) > 0 && collect($log)->every(
                     fn ($entry) => $entry['is_auth'] === true,
                 )),
             );
@@ -201,21 +201,26 @@ class AuthenticationAuditTest extends TestCase
     public function test_an_unknown_filter_falls_back_to_changes(): void
     {
         $this->actingAs(User::factory()->admin()->create())
-            ->get('/settings/security?audit='.urlencode("'; drop table users; --"))
+            ->get('/settings/audit-logs?group='.urlencode("'; drop table users; --"))
             ->assertOk()
-            ->assertInertia(fn ($page) => $page->where('auditFilter', 'changes'));
+            ->assertInertia(fn ($page) => $page->where('filters.group', 'changes'));
     }
 
-    /** Non-HR roles never had the log and still do not. */
+    /**
+     * Non-HR roles never had the log and still do not — the screen refuses
+     * them outright now that it is its own screen, and the Security page does
+     * not offer the door.
+     */
     public function test_the_log_stays_hidden_from_an_ordinary_employee(): void
     {
-        $this->actingAs(User::factory()->create())
+        $employee = User::factory()->create();
+
+        $this->actingAs($employee)->get('/settings/audit-logs')->assertForbidden();
+
+        $this->actingAs($employee)
             ->get('/settings/security')
             ->assertOk()
-            ->assertInertia(fn ($page) => $page
-                ->where('canViewAudit', false)
-                ->where('auditLog', []),
-            );
+            ->assertInertia(fn ($page) => $page->where('canViewAudit', false));
     }
 
     protected function setUp(): void

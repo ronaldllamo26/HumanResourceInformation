@@ -16,6 +16,7 @@
         "ext-openssl": "*",
         "ext-pdo": "*",
         "anthropic-ai/sdk": "^0.43.0",
+        "barryvdh/laravel-dompdf": "*",
         "fakerphp/faker": "^1.23",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/fortify": "^1.39",

@@ -6,6 +6,7 @@ use App\Models\DocumentScan;
 use App\Models\Employee;
 use App\Models\Setting;
 use App\Services\ScanAccuracyReport;
+use App\Services\ScannerCorrectionMemory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
@@ -26,7 +27,7 @@ use Inertia\Response;
  */
 class ScanAccuracyController extends Controller
 {
-    public function index(Request $request, ScanAccuracyReport $report): Response
+    public function index(Request $request, ScanAccuracyReport $report, ScannerCorrectionMemory $memory): Response
     {
         Gate::authorize('viewAuditLog', Setting::class);
 
@@ -45,6 +46,19 @@ class ScanAccuracyController extends Controller
             // wonder why a document number is not counted.
             'comparedFields' => DocumentScan::COMPARED,
             'employees' => Employee::count(),
+
+            /*
+             * What the corrections on this screen have taught the classifier.
+             * It belongs here rather than on its own screen for the same
+             * reason the by-source table does: this is where the scanner is
+             * measured, and a rule the system wrote for itself is exactly the
+             * thing somebody should be able to read and disagree with.
+             */
+            'learning' => [
+                'enabled' => $memory->isEnabled(),
+                'min_confirmations' => (int) config('scanner.learning.min_confirmations', 2),
+                'rules' => $memory->rules()->values(),
+            ],
         ]);
     }
 

@@ -318,6 +318,274 @@ class ScannerDriverRequestTest extends TestCase
         $this->assertNull(app(DocumentScanner::class)->scan(UploadedFile::fake()->image('x.jpg')));
     }
 
+    /**
+     * A PDF goes to Gemini as a PDF.
+     *
+     * The envelope is the thing no stubbed `read()` can check, which is why
+     * this class exists at all — and PDF support added a second shape to it:
+     * the mime type on `inline_data` has to be the file's own, or Gemini is
+     * told a PDF is a JPEG and answers about an image it could not decode.
+     * Asserted here because HR is handed PDFs (an NBI clearance from the
+     * portal, a PSA certificate ordered online) and nothing else would notice.
+     */
+    public function test_a_pdf_is_sent_to_gemini_as_a_pdf(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'test-key',
+            'scanner.gemini.model' => 'gemini-3.7-flash',
+        ]);
+
+        Http::fake([
+            '*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => '{"type":"clearance"}']]],
+                ]],
+            ]),
+        ]);
+
+        /*
+         * Real bytes, not `fake()->create()`: that helper reports a size and
+         * leaves the file empty, so the base64 body would be empty here and
+         * the assertion below would be measuring the fixture rather than the
+         * request.
+         */
+        app(DocumentScanner::class)->scan(
+            UploadedFile::fake()->createWithContent('nbi-clearance.pdf', '%PDF-1.4 clearance'),
+        );
+
+        Http::assertSent(function (Request $request) {
+            $parts = $request->data()['contents'][0]['parts'];
+
+            $this->assertSame('application/pdf', $parts[1]['inline_data']['mime_type']);
+            $this->assertNotEmpty($parts[1]['inline_data']['data']);
+
+            return true;
+        });
+    }
+
+    /**
+     * An image-only driver cannot be handed a PDF, and on a machine with no
+     * Imagick the conversion is not available either.
+     *
+     * The answer is "the scan found nothing" — the same place every other
+     * scanner failure lands, so HR types the fields — rather than an exception
+     * on an upload that is otherwise perfectly valid. Nothing is sent.
+     */
+    public function test_a_pdf_without_imagick_degrades_to_no_scan_on_an_image_only_driver(): void
+    {
+        if (extension_loaded('imagick')) {
+            $this->markTestSkipped('Imagick is installed here, so the conversion path is the one that runs.');
+        }
+
+        config([
+            'scanner.driver' => 'anthropic',
+            'scanner.api_key' => 'test-key',
+        ]);
+
+        Http::fake();
+
+        $this->assertNull(app(DocumentScanner::class)->scan(
+            UploadedFile::fake()->createWithContent('nbi-clearance.pdf', '%PDF-1.4 clearance'),
+        ));
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * A busy model hands the scan to the next one in the chain.
+     *
+     * This is the outage the chain was built for, and it is worth stating
+     * exactly why the retries that already existed could not cover it: the
+     * free tier shares one pool per model, so a congested model answers 503
+     * to every attempt — four knocks on the same door. Measured on the real
+     * key, `gemini-3.5-flash` was 503 on every try while another model
+     * answered in under two seconds on the same key.
+     */
+    public function test_a_busy_model_falls_through_to_the_next_one(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'test-key',
+            'scanner.gemini.model' => 'busy-model',
+            'scanner.gemini.fallback_models' => ['spare-model'],
+
+            // No retry here: the chain is what is under test, and a retry
+            // would only make the same call three more times.
+            'scanner.gemini.retries' => 1,
+        ]);
+
+        Http::fake([
+            '*models/busy-model*' => Http::response([
+                'error' => ['code' => 503, 'status' => 'UNAVAILABLE'],
+            ], 503),
+            '*models/spare-model*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => '{"document_type":"drivers_license"}']]],
+                ]],
+            ]),
+        ]);
+
+        $scanner = app(DocumentScanner::class);
+        $reading = $scanner->scan(UploadedFile::fake()->image('licence.jpg'));
+
+        $this->assertNotNull($reading, 'The spare model answered, so the scan must not come back empty.');
+        $this->assertSame(
+            'spare-model',
+            $scanner->modelUsed(),
+            'The answering model is what goes on the row — Scanner Accuracy compares by model.',
+        );
+    }
+
+    /**
+     * Every model busy is still an empty form, not an exception.
+     *
+     * The chain buys another pool to ask; it does not promise one is free.
+     * Where it lands is where every other scanner failure lands — HR types
+     * the fields — which is the whole reason a scan never takes a form down.
+     */
+    public function test_every_model_being_busy_comes_back_as_no_reading(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'test-key',
+            'scanner.gemini.model' => 'busy-one',
+            'scanner.gemini.fallback_models' => ['busy-two'],
+            'scanner.gemini.retries' => 1,
+        ]);
+
+        Log::spy();
+
+        Http::fake(['*' => Http::response(['error' => ['code' => 503]], 503)]);
+
+        $scanner = app(DocumentScanner::class);
+
+        $this->assertNull($scanner->scan(UploadedFile::fake()->image('licence.jpg')));
+        $this->assertNull(
+            $scanner->modelUsed(),
+            'Nothing answered, so no model may be recorded as having read the document.',
+        );
+
+        // Both were really tried, rather than the chain stopping at the first.
+        Http::assertSentCount(2);
+    }
+
+    /**
+     * A rejected request stops the chain where it is.
+     *
+     * A 400 is an answer about the body and a 401 is an answer about the key,
+     * and the next model would give the same one — so walking the rest of the
+     * list would spend somebody's time arriving in the same place, three
+     * requests later.
+     */
+    public function test_a_rejected_request_does_not_walk_the_rest_of_the_chain(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'wrong-key',
+            'scanner.gemini.model' => 'first-model',
+            'scanner.gemini.fallback_models' => ['second-model', 'third-model'],
+            'scanner.gemini.retries' => 1,
+        ]);
+
+        Log::spy();
+
+        Http::fake(['*' => Http::response(['error' => ['code' => 401]], 401)]);
+
+        $this->assertNull(app(DocumentScanner::class)->scan(UploadedFile::fake()->image('licence.jpg')));
+
+        Http::assertSentCount(1);
+    }
+
+    /**
+     * The chain is de-duplicated.
+     *
+     * A fallback list that repeats the configured model is a list that spends
+     * two of its slots on the same congested pool — easy to write by hand in
+     * `.env` once the primary has been changed to one of the fallbacks.
+     */
+    public function test_a_fallback_repeating_the_primary_is_only_tried_once(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'test-key',
+            'scanner.gemini.model' => 'same-model',
+            'scanner.gemini.fallback_models' => ['same-model'],
+            'scanner.gemini.retries' => 1,
+        ]);
+
+        Log::spy();
+
+        Http::fake(['*' => Http::response(['error' => ['code' => 503]], 503)]);
+
+        app(DocumentScanner::class)->scan(UploadedFile::fake()->image('licence.jpg'));
+
+        Http::assertSentCount(1);
+    }
+
+    /**
+     * The lite model at the end of the real default chain is reachable.
+     *
+     * `gemini-3.1-flash-lite` was added after `gemini-1.5-flash` and
+     * `gemini-2.0-flash` — the models that actually carried the 1,500/day
+     * quota somebody remembered — turned out to be retired by Google
+     * entirely ("no longer available... use models/gemini-3.6-flash"). It
+     * is the one "lite" model measured to accept an image with
+     * `responseJsonSchema`; two siblings (`gemini-3.5-flash-lite`,
+     * `gemini-flash-lite-latest`) both answered 400 on the same request and
+     * are deliberately not in the list. This walks the *real* production
+     * default order — three full flash models exhausted, then the lite one
+     * — rather than a hand-picked pair, so a typo in the config default
+     * would fail this rather than only a live outage.
+     */
+    public function test_the_default_chain_reaches_the_lite_model_last(): void
+    {
+        config([
+            'scanner.driver' => 'gemini',
+            'scanner.gemini.api_key' => 'test-key',
+            'scanner.gemini.retries' => 1,
+        ]);
+
+        // The real default from config/scanner.php, not a hand-picked list —
+        // proves the config file itself, not just the mechanism.
+        $chain = config('scanner.gemini.fallback_models');
+        $this->assertContains(
+            'gemini-3.1-flash-lite',
+            $chain,
+            'The lite model belongs in the shipped default list.',
+        );
+        $this->assertSame(
+            'gemini-3.1-flash-lite',
+            end($chain),
+            'It has to be last — a full flash model reads an ID better than a lite one.',
+        );
+
+        Http::fake([
+            '*models/gemini-3.1-flash-lite*' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [['text' => '{"document_type":"drivers_license"}']]],
+                ]],
+            ]),
+            // Everything before it in the real default chain is busy.
+            '*' => Http::response(['error' => ['code' => 503, 'status' => 'UNAVAILABLE']], 503),
+        ]);
+
+        $scanner = app(DocumentScanner::class);
+        $reading = $scanner->scan(UploadedFile::fake()->image('licence.jpg'));
+
+        $this->assertNotNull($reading, 'Every full flash model was busy — the lite one should still answer.');
+        $this->assertSame('gemini-3.1-flash-lite', $scanner->modelUsed());
+
+        /*
+         * Counted from the chain rather than written as a number. Adding a
+         * model to the shipped default broke a hard-coded 5 here, and the
+         * point of this test is the *order* — that the lite model is reached
+         * only after everything before it — not how many models there happen
+         * to be today. One request each, primary included.
+         */
+        Http::assertSentCount(count($chain) + 1);
+    }
+
     private function scan(): void
     {
         app(DocumentScanner::class)->scan(UploadedFile::fake()->image('licence.jpg'));

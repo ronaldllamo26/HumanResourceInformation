@@ -24,7 +24,7 @@ class User extends Authenticatable
     public const ROLE_EMPLOYEE = 'employee';
 
     /** Every username ends in this. It looks like an address; nothing is mailed to it. */
-    public const USERNAME_DOMAIN = 'primepower.test';
+    public const USERNAME_DOMAIN = 'primepower.com';
 
     public const ROLES = [
         self::ROLE_ADMIN,
@@ -46,6 +46,8 @@ class User extends Authenticatable
         'role',
         'is_active',
         'must_change_password',
+        'otp_email',
+        'otp_enabled',
         'privacy_notice_version',
         'privacy_acknowledged_at',
     ];
@@ -62,8 +64,8 @@ class User extends Authenticatable
 
     /**
      * A free username for a person: Juan Dela Cruz becomes
-     * `jdelacruz@primepower.test`, and if that is taken,
-     * `jdelacruz2@primepower.test`.
+     * `jdelacruz@primepower.com`, and if that is taken,
+     * `jdelacruz2@primepower.com`.
      */
     public static function usernameFor(string $firstName, string $lastName): string
     {
@@ -89,7 +91,41 @@ class User extends Authenticatable
         return $candidate;
     }
 
-    /** `nina` becomes `nina@primepower.test`; a name already carrying a domain is kept. */
+    /**
+     * Where a notification to this account goes.
+     *
+     * The username is a credential, not an address — `name@primepower.com` is
+     * shaped like one and nothing is ever mailed to it — so mail is routed to
+     * the personal inbox an administrator connected for sign-in codes. An
+     * account with none is not mailable at all, which is exactly why having
+     * one is what enrols it in the second factor.
+     */
+    public function routeNotificationForMail(): ?string
+    {
+        return $this->otp_email;
+    }
+
+    /**
+     * A company username suggested from a personal address.
+     *
+     * A *suggestion*, and the distinction is the point: `johnpogs.b@gmail.com`
+     * could reasonably become `johnpogs`, `john`, or `jbenavidez`, and which
+     * one a person is called at work is not derivable from their inbox. The
+     * form offers this and the administrator types over it.
+     *
+     * The local part up to the first dot, plus-tag or digit, because that is
+     * the part of a Gmail address that is usually the person's name —
+     * `johnpogs.b` gives `johnpogs`, `nina+work` gives `nina`.
+     */
+    public static function suggestUsernameFromEmail(string $email): string
+    {
+        $local = strstr(strtolower(trim($email)), '@', true) ?: strtolower(trim($email));
+        $head = preg_split('/[.+_\d]/', $local)[0] ?? '';
+
+        return static::availableUsername($head !== '' ? $head : $local);
+    }
+
+    /** `nina` becomes `nina@primepower.com`; a name already carrying a domain is kept. */
     public static function withDomain(string $username): string
     {
         $username = strtolower(trim($username));
@@ -113,7 +149,7 @@ class User extends Authenticatable
         $lower = 'abcdefghijkmnopqrstuvwxyz';
         $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
         $digits = '23456789';
-        $symbols = '!@#$%^&*-_=+';
+        $symbols = '!@#$';
 
         $pool = $lower.$upper.$digits.$symbols;
 
@@ -220,6 +256,10 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'otp_enabled' => 'boolean',
+            'otp_email_verified_at' => 'datetime',
+            'otp_expires_at' => 'datetime',
+            'otp_sent_at' => 'datetime',
             'privacy_acknowledged_at' => 'datetime',
         ];
     }

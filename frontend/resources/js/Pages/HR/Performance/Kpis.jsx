@@ -76,7 +76,6 @@ export default function Kpis({ kpis, departments, positions, can }) {
             <Card>
                 <CardHeader
                     title="KPI Library"
-                    description="Scorecards are built from these. A KPI applies company-wide, to a department, or to a single position."
                     action={
                         can.manage && (
                             <Button size="sm" onClick={open}>

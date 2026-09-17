@@ -48,6 +48,14 @@ class DocumentScanner
 
     public const TYPE_FROM_HEADING = 'heading';
 
+    /**
+     * A heading HR has filed the same way more than once — see
+     * `ScannerCorrectionMemory`. Ranked below the curated keyword list and
+     * above every machine-derived signal, because a correction has a person
+     * behind it and a number's shape does not.
+     */
+    public const TYPE_FROM_LEARNED = 'learned';
+
     public const TYPE_FROM_NUMBER_FORMAT = 'number_format';
 
     public const TYPE_FROM_VALIDITY = 'validity';
@@ -76,6 +84,9 @@ class DocumentScanner
     private const MAX_TOKENS = 1024;
 
     private const NAME_MATCH_THRESHOLD = 0.6;
+
+    /** Which model answered the last scan — see `modelUsed()`. */
+    private ?string $answeredWith = null;
 
     public function __construct(private readonly ?Client $client = null) {}
 
@@ -264,6 +275,20 @@ class DocumentScanner
     }
 
     /**
+     * The model that actually answered the last scan.
+     *
+     * Read by the controller when it writes `document_scans.model`. With a
+     * fallback chain the configured model and the answering model are no
+     * longer the same thing, and Scanner Accuracy compares readings *by
+     * model* — recording the one in config while another did the work would
+     * put the blame for a bad reading on a model that never saw the document.
+     */
+    public function modelUsed(): ?string
+    {
+        return $this->answeredWith;
+    }
+
+    /**
      * The one method that talks to the API, kept alone and `protected` so the
      * rules around it — type validation, date parsing, the name check — can
      * be tested without a network call or an API key. The SDK's
@@ -397,7 +422,7 @@ class DocumentScanner
     }
 
     /**
-     * Sends one image to whichever driver is configured.
+     * Sends one image (or PDF) to whichever driver is configured.
      *
      * The prompt and the schema are arguments rather than fixed, because the
      * scanner now reads two different things: an ID card, and a filled-in 201
@@ -407,6 +432,10 @@ class DocumentScanner
      * three more places for the Gemini envelope to be wrong in — and it was
      * already wrong in the one place it existed.
      *
+     * **PDF handling:** Gemini accepts `application/pdf` natively, so a PDF
+     * goes straight through. The other two drivers are image-only, so a PDF
+     * is rendered to a JPEG first — see `pdfToImage()`.
+     *
      * read() keeps its own signature so the tests that stub it still can.
      *
      * @param  array<string, mixed>  $schema
@@ -414,11 +443,81 @@ class DocumentScanner
      */
     private function ask(UploadedFile $file, string $prompt, array $schema): ?array
     {
-        return match (config('scanner.driver')) {
-            'gemini' => $this->readWithGemini($file, $prompt, $schema),
-            'openrouter' => $this->readWithOpenRouter($file, $prompt, $schema),
-            default => $this->readWithAnthropic($file, $prompt, $schema),
+        $driver = config('scanner.driver');
+
+        // Gemini accepts PDFs natively — no conversion needed.
+        if ($driver === 'gemini') {
+            return $this->readWithGemini($file, $prompt, $schema);
+        }
+
+        // The other two drivers are image-only. A PDF must become a JPEG
+        // before it can be sent, and a conversion failure degrades to
+        // "the scan found nothing" rather than blocking the upload.
+        $effective = $this->isPdf($file) ? $this->pdfToImage($file) : $file;
+
+        if ($effective === null) {
+            return null;
+        }
+
+        return match ($driver) {
+            'openrouter' => $this->readWithOpenRouter($effective, $prompt, $schema),
+            default => $this->readWithAnthropic($effective, $prompt, $schema),
         };
+    }
+
+    /** Whether this upload is a PDF rather than an image. */
+    private function isPdf(UploadedFile $file): bool
+    {
+        return $file->getMimeType() === 'application/pdf';
+    }
+
+    /**
+     * Renders the first page of a PDF to a temporary JPEG.
+     *
+     * Uses Imagick, which is the same extension Laravel's image manipulation
+     * already depends on. The conversion is deliberately low-ceremony: one
+     * page, 200 DPI (enough for a government ID's text), JPEG quality 90.
+     * A multi-page employment contract carries its fields on the first page,
+     * so the rest is not read.
+     *
+     * Returns null when Imagick is not installed or the PDF cannot be read —
+     * neither is an error the user should see; it degrades to "no scan".
+     */
+    private function pdfToImage(UploadedFile $file): ?UploadedFile
+    {
+        if (! extension_loaded('imagick')) {
+            Log::warning('PDF scan skipped: Imagick extension not available');
+
+            return null;
+        }
+
+        try {
+            $imagick = new \Imagick;
+            $imagick->setResolution(200, 200);
+            // Read only the first page (index 0).
+            $imagick->readImage($file->getRealPath().'[0]');
+            $imagick->setImageFormat('jpeg');
+            $imagick->setImageCompressionQuality(90);
+
+            $tempPath = tempnam(sys_get_temp_dir(), 'scan_pdf_').'_converted.jpg';
+            $imagick->writeImage($tempPath);
+            $imagick->clear();
+            $imagick->destroy();
+
+            return new UploadedFile(
+                $tempPath,
+                pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME).'.jpg',
+                'image/jpeg',
+                null,
+                true, // test mode — skip is_uploaded_file check
+            );
+        } catch (\Throwable $e) {
+            Log::warning('PDF to image conversion failed', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
@@ -451,15 +550,82 @@ class DocumentScanner
      * that is syntactically fine and semantically not this API — which is
      * exactly the mistake this method was written to fix.
      */
-    private function geminiEndpoint(): string
+    private function geminiEndpoint(string $model): string
     {
         $base = rtrim((string) config('scanner.gemini.endpoint'), '/');
-        $model = (string) config('scanner.gemini.model');
 
         return "{$base}/models/{$model}:generateContent";
     }
 
+    /**
+     * The models to try, in order: the configured one, then the fallbacks.
+     *
+     * De-duplicated, because a fallback list that repeats the primary is a
+     * list that spends two slots on the same congested pool.
+     *
+     * @return array<int, string>
+     */
+    private function geminiModels(): array
+    {
+        return array_values(array_unique(array_filter([
+            (string) config('scanner.gemini.model'),
+            ...(array) config('scanner.gemini.fallback_models', []),
+        ])));
+    }
+
+    /**
+     * Asks Gemini, moving down the model list while the answer is "busy".
+     *
+     * The 503 that took the scanner down was not a misconfiguration: the key
+     * was valid and the model existed and took images — it was simply out of
+     * capacity, and every retry heard the same thing. A different model is a
+     * different pool, so the chain is the recovery and the per-model retry is
+     * only there for the momentary case.
+     */
     private function readWithGemini(UploadedFile $file, string $prompt, array $schema): ?array
+    {
+        $this->answeredWith = null;
+        $models = $this->geminiModels();
+
+        foreach ($models as $index => $model) {
+            $attempt = $this->askGemini($model, $file, $prompt, $schema);
+
+            if ($attempt['json'] !== null) {
+                $this->answeredWith = $model;
+
+                // Worth a line in the log: a fallback answering means the
+                // configured model is congested, which is the thing somebody
+                // would otherwise only learn from a dead Scan button.
+                if ($index > 0) {
+                    Log::info('Document scan answered by a fallback model', [
+                        'configured' => $models[0],
+                        'answered' => $model,
+                    ]);
+                }
+
+                return $attempt['json'];
+            }
+
+            // A rejected schema or a bad key is an answer. Asking the next
+            // model the same rejected question arrives at the same place.
+            if (! $attempt['retryable']) {
+                return null;
+            }
+        }
+
+        Log::warning('Document scan found no available Gemini model', [
+            'tried' => $models,
+        ]);
+
+        return null;
+    }
+
+    /**
+     * One model, one request.
+     *
+     * @return array{json: array<string, mixed>|null, retryable: bool}
+     */
+    private function askGemini(string $model, UploadedFile $file, string $prompt, array $schema): array
     {
         try {
             /*
@@ -490,7 +656,7 @@ class DocumentScanner
                         || ($exception->response?->status() ?? 0) >= 500,
                 )
                 ->withHeaders(['x-goog-api-key' => config('scanner.gemini.api_key')])
-                ->post($this->geminiEndpoint(), [
+                ->post($this->geminiEndpoint($model), [
                     // Gemini takes the image as a `part` beside the text, in a
                     // `contents` array — not as a flat list of typed inputs.
                     'contents' => [[
@@ -566,10 +732,13 @@ class DocumentScanner
                 ]);
         } catch (ConnectionException $exception) {
             Log::warning('Document scan failed to reach Gemini', [
+                'model' => $model,
                 'message' => $exception->getMessage(),
             ]);
 
-            return null;
+            // The network, not the model — but the next model is on the same
+            // network, so there is nothing to fall through to.
+            return ['json' => null, 'retryable' => false];
         } catch (RequestException $exception) {
             /*
              * Thrown once the retries above are spent, because they have to
@@ -577,13 +746,21 @@ class DocumentScanner
              * plain failure, so a quota exhausted after four attempts and a
              * key rejected on the first read the same way in the log.
              */
+            $status = $exception->response?->status() ?? 0;
+
             Log::warning('Document scan rejected by Gemini', [
-                'status' => $exception->response?->status(),
+                'model' => $model,
+                'status' => $status,
                 'body' => $exception->response?->body(),
                 'attempts_exhausted' => true,
             ]);
 
-            return null;
+            // 429 and 5xx are capacity; anything else is an answer about the
+            // request itself, which the next model would repeat.
+            return [
+                'json' => null,
+                'retryable' => $status === 429 || $status >= 500,
+            ];
         }
 
         if ($response->failed()) {
@@ -591,14 +768,18 @@ class DocumentScanner
             // free-tier quota, a rejected schema — and all three look the same
             // from the form, so the log is the only place to tell them apart.
             Log::warning('Document scan rejected by Gemini', [
+                'model' => $model,
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
 
-            return null;
+            return [
+                'json' => null,
+                'retryable' => $response->status() === 429 || $response->status() >= 500,
+            ];
         }
 
-        return $this->firstGeminiJson($response->json() ?? []);
+        return ['json' => $this->firstGeminiJson($response->json() ?? []), 'retryable' => false];
     }
 
     /**
@@ -1177,6 +1358,16 @@ class DocumentScanner
         - note: null unless something is genuinely worth flagging — a sample
           document, an expiry already past, text you could not make out. One
           short sentence. Do not use it to repeat what you read.
+        - **Driver's Licence restriction / DL codes:** If the document is a
+          Philippine LTO driver's licence, read the **DL CODES** or
+          **RESTRICTION** or **CONDITIONS** field printed on the card. These
+          are the vehicle categories the holder is allowed to drive. Common
+          codes: A (motorcycles), A1 (mopeds), B (cars/light vehicles),
+          B1 (three-wheelers), B2 (car with automatic transmission),
+          BE (car + trailer), C (trucks), D (buses), CE (articulated trucks),
+          1–8 (old restriction numbers). Report them exactly as printed,
+          comma-separated. If the document is not a driver's licence or the
+          codes are not legible, return null for dl_codes.
         PROMPT;
     }
 
@@ -1230,10 +1421,15 @@ class DocumentScanner
                         'type' => ['string', 'null'],
                         'description' => 'One short sentence if something is worth flagging.',
                     ],
+                    'dl_codes' => [
+                        'type' => ['string', 'null'],
+                        'description' => 'Driver\'s licence restriction / DL codes as printed, comma-separated (e.g. "A, B, B2"). Null for non-licence documents.',
+                    ],
                 ],
                 'required' => [
                     'type', 'title', 'document_number', 'issued_at',
                     'expires_at', 'name_on_document', 'confidence', 'note',
+                    'dl_codes',
                 ],
                 'additionalProperties' => false,
             ],
@@ -1517,6 +1713,50 @@ class DocumentScanner
                 ? $raw['confidence']
                 : 'low',
             'note' => $this->note($raw['note'] ?? null),
+
+            /*
+             * DL restriction codes from a driver's licence, if present.
+             *
+             * Only meaningful for `drivers_license` type documents. A manpower
+             * agency deploys drivers, forklift operators, and truck drivers —
+             * knowing which vehicle categories they are licensed for is as
+             * important as knowing whether the licence is current.
+             *
+             * Validated against the known Philippine DL codes so a hallucinated
+             * code is dropped rather than shown.
+             */
+            'dl_codes' => $type === 'drivers_license'
+                ? $this->parseDlCodes($raw['dl_codes'] ?? null)
+                : null,
+
+            /*
+             * Government ID number validation — format and checksum checks
+             * for SSS, PhilHealth, TIN, PhilSys, and Pag-IBIG numbers.
+             *
+             * Only meaningful for `government_id` type documents. The heading
+             * tells the validator which card it is, so a TIN ID is checked
+             * against TIN rules and an SSS card against SSS rules.
+             *
+             * Reported as a warning, never blocking — same rule as
+             * `number_format_ok`. A failed check is a reason to look, not
+             * a reason to refuse.
+             */
+            'id_validation' => $type === 'government_id'
+                ? app(GovernmentIdValidator::class)->validate(
+                    $this->documentNumber($raw['document_number'] ?? null),
+                    $raw['title'] ?? null,
+                )
+                : null,
+
+            /*
+             * Chronological and logical warnings about the document.
+             *
+             * These are heuristic checks that catch the kinds of mistakes a
+             * person would notice on a second glance: a future issue date, an
+             * underage clearance holder, a suspiciously short validity. None
+             * of them block the upload — they are flags, not gates.
+             */
+            'anomalies' => $this->detectAnomalies($dates, $type, $employee),
         ];
     }
 
@@ -1542,6 +1782,120 @@ class DocumentScanner
             || str_contains(mb_strtolower($note), 'worth flagging');
 
         return $echo ? null : $note;
+    }
+
+    /**
+     * Chronological and logical warnings about a scanned document.
+     *
+     * Each check is deterministic: a future date is always wrong, an
+     * underage clearance holder is always suspicious. None of these block
+     * the upload — they are flags that tell HR where to look, the same
+     * posture every other warning in this scanner has.
+     *
+     * The checks are ordered from most to least alarming, and each is
+     * phrased as a short sentence HR can read on the panel.
+     *
+     * @param  array{issued_at: string|null, expires_at: string|null}  $dates
+     * @return array<int, string> empty when nothing is anomalous
+     */
+    private function detectAnomalies(
+        array $dates,
+        ?string $type,
+        ?Employee $employee,
+    ): array {
+        $warnings = [];
+        $today = Carbon::today();
+
+        $issuedAt = $dates['issued_at'] ?? null;
+        $expiresAt = $dates['expires_at'] ?? null;
+
+        /*
+         * 1. Future issue date — a document cannot have been issued tomorrow.
+         *    Always a misread year or a fabricated document.
+         */
+        if ($issuedAt !== null) {
+            $issued = Carbon::parse($issuedAt);
+
+            if ($issued->isAfter($today)) {
+                $warnings[] = "Issue date ({$issuedAt}) is in the future.";
+            }
+        }
+
+        /*
+         * 2. Expiry before issue — already partially covered by dates(),
+         *    which drops both dates when this happens. This adds explicit
+         *    messaging for the panel when the raw data showed the problem
+         *    before dates() cleared it.
+         */
+        if ($issuedAt !== null && $expiresAt !== null) {
+            $issued = Carbon::parse($issuedAt);
+            $expires = Carbon::parse($expiresAt);
+
+            if ($expires->isBefore($issued)) {
+                $warnings[] = "Expiry date ({$expiresAt}) is before the issue date ({$issuedAt}).";
+            }
+        }
+
+        /*
+         * 3. Underage check — an NBI/police/barangay clearance cannot be
+         *    issued to someone under 18. If the employee's birth date is
+         *    on file and the document was issued when they were a minor,
+         *    the dates are inconsistent.
+         */
+        if (
+            $type === 'clearance'
+            && $issuedAt !== null
+            && $employee?->birth_date !== null
+        ) {
+            $ageAtIssue = Carbon::parse($employee->birth_date)
+                ->diffInYears(Carbon::parse($issuedAt));
+
+            if ($ageAtIssue < 18) {
+                $warnings[] = "Holder would have been {$ageAtIssue} years old at the issue date — clearances require minimum age 18.";
+            }
+        }
+
+        /*
+         * 4. Suspiciously short validity — a clearance valid for less than
+         *    a month is either a misread date or a document that was issued
+         *    already expired. Real clearances run 6–12 months minimum.
+         */
+        if (
+            $type === 'clearance'
+            && $issuedAt !== null
+            && $expiresAt !== null
+        ) {
+            $months = Carbon::parse($issuedAt)->diffInMonths(Carbon::parse($expiresAt));
+
+            if ($months < 1) {
+                $warnings[] = 'Validity period is less than 1 month — unusually short for a clearance.';
+            }
+        }
+
+        /*
+         * 5. Duplicate document number — removed, and worth the explanation
+         *    so it is not written a second time.
+         *
+         * It queried `employee_documents.document_number`, **a column that
+         * does not exist**: the number is a *check* in this system and is
+         * never stored on the document row (see the accuracy screen, which
+         * leaves it out of the compared fields for the same reason). So the
+         * check could never have found a duplicate — and on SQLite it did not
+         * even fail, because SQLite reads a double-quoted identifier it cannot
+         * resolve as a *string literal*, so `"document_number" = '...'` is
+         * simply false and the whole suite passed. Postgres refuses it, which
+         * is how it was found.
+         *
+         * The question it was asking is real and already answered elsewhere:
+         * a number keyed against two people is
+         * `RecordIntegrityChecker::sharedNumbers()`, which compares in PHP
+         * because those columns are encrypted, and a number that contradicts
+         * this employee's own file is the `number_matches` check on the panel
+         * above. Adding a third opinion here would be a third answer to one
+         * question.
+         */
+
+        return $warnings;
     }
 
     /**
@@ -1592,6 +1946,16 @@ class DocumentScanner
             return [$type, self::TYPE_FROM_HEADING];
         }
 
+        /*
+         * What HR's own corrections say this heading is. It sits here rather
+         * than higher because the config's keyword list is curated and this
+         * list is not, and higher than the three machine signals because
+         * those were measured wrong and this one carries somebody's decision.
+         */
+        if ($type = $this->typeFromCorrections($raw['title'] ?? null)) {
+            return [$type, self::TYPE_FROM_LEARNED];
+        }
+
         if ($type = $this->typeFromNumberFormat($number)) {
             return [$type, self::TYPE_FROM_NUMBER_FORMAT];
         }
@@ -1612,6 +1976,23 @@ class DocumentScanner
         }
 
         return [$claimed, self::TYPE_FROM_MODEL];
+    }
+
+    /**
+     * The type HR has filed for this printed heading before.
+     *
+     * Resolved in PHP against our own rows; nothing is sent to the provider,
+     * which is deliberate — past readings are other employees' documents, and
+     * sending them as examples would be a fresh cross-border transfer for a
+     * gain this already achieves. Never `type_certain`: a rule the system
+     * wrote for itself has not been measured, so batch filing still holds it
+     * for a person.
+     */
+    private function typeFromCorrections(?string $heading): ?string
+    {
+        $type = app(ScannerCorrectionMemory::class)->typeFor($heading);
+
+        return in_array($type, EmployeeDocument::TYPES, true) ? $type : null;
     }
 
     /**
@@ -2305,5 +2686,42 @@ class DocumentScanner
     private function client(): Client
     {
         return $this->client ?? new Client(apiKey: config('scanner.api_key'));
+    }
+
+    /**
+     * Validated DL restriction codes from a driver's licence.
+     *
+     * Philippine LTO licences print vehicle-category codes on the card.
+     * The old system used numbers 1–8; the current one follows the Vienna
+     * Convention: A, A1, B, B1, B2, BE, C, CE, D, DE. Both are accepted
+     * because older cards still circulate.
+     *
+     * Codes that are not on the known list are dropped — a hallucinated
+     * code must never decide whether a driver is qualified for a vehicle.
+     *
+     * @return array<int, string>|null null when nothing valid was read
+     */
+    private function parseDlCodes(mixed $value): ?array
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        // Known Philippine DL codes — both old restriction numbers and
+        // current Vienna Convention categories.
+        $known = [
+            'a', 'a1', 'b', 'b1', 'b2', 'be', 'c', 'ce', 'd', 'de',
+            '1', '2', '3', '4', '5', '6', '7', '8',
+        ];
+
+        $codes = array_filter(
+            array_map(
+                fn (string $code) => strtoupper(trim($code)),
+                preg_split('/[,;\s]+/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [],
+            ),
+            fn (string $code) => in_array(strtolower($code), $known, true),
+        );
+
+        return $codes !== [] ? array_values($codes) : null;
     }
 }

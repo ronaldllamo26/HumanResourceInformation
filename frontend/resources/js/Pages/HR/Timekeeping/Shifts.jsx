@@ -123,7 +123,6 @@ export default function Shifts({ shifts, assignments, filters, employees, weekda
             <Card className="mb-5">
                 <CardHeader
                     title="Shifts"
-                    description="When a working day starts and ends, the unpaid break, and how many minutes late is still on time."
                     action={
                         <Button onClick={() => openShift()}>
                             <Plus className="h-4 w-4" />
@@ -212,7 +211,6 @@ export default function Shifts({ shifts, assignments, filters, employees, weekda
             <Card>
                 <CardHeader
                     title="Employee schedules"
-                    description="Who works which shift, their rest days, and from when. A new schedule ends the previous one the day before it starts."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Button

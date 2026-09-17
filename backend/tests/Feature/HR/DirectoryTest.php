@@ -310,7 +310,7 @@ class DirectoryTest extends TestCase
             'department_id' => $department->id,
             'position_id' => $position->id,
             'status' => 'active',
-            'email' => 'juan@primepower.test',
+            'email' => 'juan@primepower.com',
             'mobile_number' => '09171234567',
 
             // Everything below must never reach the page.
@@ -328,7 +328,7 @@ class DirectoryTest extends TestCase
             // Fixed, not Faker's: a random middle name or email containing
             // "juan" made the search test fail now and then.
             'middle_name' => null,
-            'email' => 'pedro@primepower.test',
+            'email' => 'pedro@primepower.com',
             'last_name' => 'Santos',
             'department_id' => $department->id,
             'position_id' => $position->id,

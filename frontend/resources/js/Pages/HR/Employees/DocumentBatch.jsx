@@ -199,10 +199,7 @@ export default function DocumentBatch({
             </div>
 
             <Card>
-                <CardHeader
-                    title="Drop a stack of scans"
-                    description={`Up to ${maxFiles} images at a time. Each one is read and matched to the person it names. Anything every check agrees on is filed straight away; the rest come back here for you.`}
-                />
+                <CardHeader title="Drop a stack of scans" />
                 <CardBody className="space-y-3">
                     {/* Honest when the feature is dark, rather than offering a
                         scan that would come back empty for every file. */}
@@ -299,7 +296,6 @@ export default function DocumentBatch({
                 <Card className="mt-6">
                     <CardHeader
                         title="These need you"
-                        description={`${assigned} of ${rows.length} have an employee. The rest are skipped.`}
                         action={
                             <Button
                                 onClick={submit}

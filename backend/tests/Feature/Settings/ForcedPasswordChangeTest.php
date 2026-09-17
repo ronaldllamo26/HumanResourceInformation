@@ -43,6 +43,22 @@ class ForcedPasswordChangeTest extends TestCase
         $this->actingAs($user)->get('/settings/security')->assertOk();
     }
 
+    public function test_an_account_with_both_otp_and_forced_password_change_can_reach_otp_challenge(): void
+    {
+        $user = User::factory()->create([
+            'must_change_password' => true,
+            'otp_email' => 'employee@gmail.com',
+        ]);
+
+        // Has not solved OTP yet: accessing a route should redirect to OTP, NOT enter an infinite loop
+        $response = $this->actingAs($user)->get('/dashboard');
+        $response->assertRedirect(route('otp.challenge'));
+
+        // Accessing OTP screen directly should return 200 OK, not be redirected back to settings.security
+        $this->actingAs($user)->get(route('otp.challenge'))->assertOk();
+    }
+
+
     /**
      * Trapping someone in a session they cannot leave is worse than the risk
      * being managed — signing out reduces exposure rather than adding to it.
@@ -158,12 +174,12 @@ class ForcedPasswordChangeTest extends TestCase
 
         $this->actingAs($admin)->post('/settings/users', [
             'name' => 'New Person',
-            'email' => 'new.person@primepower.test',
+            'username' => 'new.person',
             'role' => User::ROLE_EMPLOYEE,
         ]);
 
         $this->assertTrue(
-            User::where('email', 'new.person@primepower.test')->first()->must_change_password,
+            User::where('username', 'new.person@primepower.com')->first()->must_change_password,
         );
     }
 
@@ -195,12 +211,12 @@ class ForcedPasswordChangeTest extends TestCase
             'basic_salary' => 25000,
             'pay_frequency' => 'semi_monthly',
             'status' => 'active',
-            'email' => 'provisioned@primepower.test',
+            'email' => 'provisioned@primepower.com',
             'create_user_account' => true,
             'user_role' => User::ROLE_EMPLOYEE,
         ]);
 
-        $created = User::where('email', 'provisioned@primepower.test')->first();
+        $created = User::where('username', 'jdelacruz@primepower.com')->first();
 
         $this->assertNotNull($created, 'No login was provisioned.');
         $this->assertTrue($created->must_change_password);

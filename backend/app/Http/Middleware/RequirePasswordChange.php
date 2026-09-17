@@ -33,8 +33,13 @@ class RequirePasswordChange
     private const ALLOWED = [
         'settings.security',
         'settings.security.password',
+        'otp.challenge',
+        'otp.verify',
+        'otp.resend',
         'logout',
+        'logout.idle',
     ];
+
 
     public function handle(Request $request, Closure $next): Response
     {

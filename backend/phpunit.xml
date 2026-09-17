@@ -30,6 +30,14 @@
             serve the site.
         -->
         <env name="APP_URL" value="http://localhost"/>
+        <!--
+            Pinned for the same reason APP_URL above is: the idle window is the
+            whole of the session enforcement, and a suite that read it out of
+            one laptop's .env would assert whatever that machine happened to
+            say. The shipped default lives in config/session.php and
+            .env.production.example.
+        -->
+        <env name="SESSION_LIFETIME" value="5"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>

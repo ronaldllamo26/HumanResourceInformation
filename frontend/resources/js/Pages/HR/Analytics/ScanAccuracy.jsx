@@ -1,5 +1,12 @@
 import { router } from '@inertiajs/react';
-import { CheckCircle2, CircleAlert, MinusCircle, Timer, TriangleAlert } from 'lucide-react';
+import {
+    CheckCircle2,
+    CircleAlert,
+    GraduationCap,
+    MinusCircle,
+    Timer,
+    TriangleAlert,
+} from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Badge,
@@ -64,6 +71,7 @@ export default function ScanAccuracy({
     driver,
     comparedFields = [],
     employees,
+    learning,
 }) {
     const { totals, fields, types, sources, recent } = report;
 
@@ -78,7 +86,6 @@ export default function ScanAccuracy({
             <Card className="mb-6">
                 <CardHeader
                     title="How the scanner is actually doing"
-                    description={`Measured from what HR did with each proposal, on the ${driver} driver. The model reports a confidence of its own on every scan; it is not used here, because asked across six documents it answered "high" six times — including on the readings that were wrong.`}
                     action={
                         <div className="flex flex-wrap items-center gap-2">
                             <DateInput
@@ -144,10 +151,7 @@ export default function ScanAccuracy({
 
             <div className="grid gap-6 lg:grid-cols-2">
                 <Card>
-                    <CardHeader
-                        title="By field"
-                        description={`Worst first. Only ${comparedFields.map(titleCase).join(', ')} are counted — the number and the name are checks rather than stored values, so there is nothing to compare them against.`}
-                    />
+                    <CardHeader title="By field" />
                     <CardBody>
                         <Table>
                             <THead>
@@ -179,10 +183,7 @@ export default function ScanAccuracy({
                 </Card>
 
                 <Card>
-                    <CardHeader
-                        title="By how the type was decided"
-                        description="The five sources are ordered by an argument — a number a person filed beats a printed heading beats an inference beats the model's guess. This is where that ordering is checked against outcomes instead of asserted."
-                    />
+                    <CardHeader title="By how the type was decided" />
                     <CardBody>
                         <Table>
                             <THead>
@@ -219,10 +220,7 @@ export default function ScanAccuracy({
             </div>
 
             <Card className="mt-6">
-                <CardHeader
-                    title="By document type"
-                    description="Counted on the type the document was finally filed as — the answer a person settled on, not the one proposed."
-                />
+                <CardHeader title="By document type" />
                 <CardBody>
                     <Table>
                         <THead>
@@ -260,10 +258,7 @@ export default function ScanAccuracy({
             </Card>
 
             <Card className="mt-6">
-                <CardHeader
-                    title="Recent scans"
-                    description="Abandoned scans are counted too — a reading poor enough to start over is a failure, and leaving them out would flatter every figure above."
-                />
+                <CardHeader title="Recent scans" />
                 <CardBody>
                     <Table>
                         <THead>
@@ -351,6 +346,53 @@ export default function ScanAccuracy({
                             )}
                         </TBody>
                     </Table>
+                </CardBody>
+            </Card>
+            {/* What the corrections above have taught the classifier. Shown
+                here because this is where the scanner is measured, and a rule
+                the system wrote for itself is the thing somebody should be
+                able to read and disagree with. */}
+            <Card className="mt-5">
+                <CardHeader title="Learned from your corrections" />
+                <Table>
+                    <THead>
+                        <TR>
+                            <TH>Printed heading</TH>
+                            <TH>Filed as</TH>
+                            <TH className="text-right">Times confirmed</TH>
+                            <TH>Last seen</TH>
+                        </TR>
+                    </THead>
+                    <TBody>
+                        {(learning?.rules ?? []).length === 0 ? (
+                            <TableEmpty
+                                colSpan={4}
+                                icon={GraduationCap}
+                                title="Nothing learned yet"
+                                description={`A heading has to be filed the same way ${learning?.min_confirmations ?? 2} times before it becomes a rule — that is what stops one mis-filing from teaching the scanner something wrong.`}
+                            />
+                        ) : (
+                            learning.rules.map((rule) => (
+                                <TR key={rule.heading}>
+                                    <TD className="text-foreground">{rule.heading}</TD>
+                                    <TD>
+                                        <Badge variant="primary">{titleCase(rule.type)}</Badge>
+                                    </TD>
+                                    <TD className="text-right tabular-nums">
+                                        {rule.confirmations}
+                                    </TD>
+                                    <TD className="text-muted-foreground">
+                                        {formatDate(rule.last_seen)}
+                                    </TD>
+                                </TR>
+                            ))
+                        )}
+                    </TBody>
+                </Table>
+                <CardBody className="border-t border-border pt-3 text-xs text-muted-foreground">
+                    A learned type fills the form for a person to confirm; it never files a
+                    document unattended, because a rule the system wrote for itself has not been
+                    measured the way the two certain sources have.
                 </CardBody>
             </Card>
         </AppLayout>

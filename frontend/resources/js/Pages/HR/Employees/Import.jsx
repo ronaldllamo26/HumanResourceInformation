@@ -123,10 +123,7 @@ export default function Import({ columns = [], clients = [] }) {
             </div>
 
             <Card>
-                <CardHeader
-                    title="Upload a spreadsheet"
-                    description="Nothing is created until you have seen what the file contains."
-                />
+                <CardHeader title="Upload a spreadsheet" />
                 <CardBody className="space-y-4">
                     <Field
                         label="CSV file"
@@ -173,7 +170,6 @@ export default function Import({ columns = [], clients = [] }) {
                 <Card className="mt-6">
                     <CardHeader
                         title="What this file would do"
-                        description="Rows with an error are skipped; the rest are created."
                         action={
                             <Button
                                 onClick={commit}
@@ -262,10 +258,7 @@ export default function Import({ columns = [], clients = [] }) {
             )}
 
             <Card className="mt-6">
-                <CardHeader
-                    title="Columns"
-                    description="Header names are matched case-insensitively, and spaces work as well as underscores."
-                />
+                <CardHeader title="Columns" />
                 <CardBody>
                     <dl className="divide-y divide-border">
                         {columns.map((column) => (

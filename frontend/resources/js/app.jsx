@@ -22,7 +22,8 @@ const appName = import.meta.env.VITE_APP_NAME || 'PrimePower HRIS';
  * `invalid` fires for exactly this: a response Inertia cannot render.
  */
 router.on('invalid', (event) => {
-    if (event.detail.response?.status === 419) {
+    const status = event.detail.response?.status;
+    if (status === 419 || status === 401 || status === 405) {
         event.preventDefault();
 
         window.location.href = '/login';

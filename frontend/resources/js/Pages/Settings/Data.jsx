@@ -14,15 +14,9 @@ export default function Data({ database, counts, settings, exports }) {
     };
 
     return (
-        <SettingsLayout
-            title="Data & Backup"
-            description="What the system is holding, how to get it out, and how long the audit trail is kept."
-        >
+        <SettingsLayout title="Data & Backup">
             <Card>
-                <CardHeader
-                    title="Database"
-                    description="The connection this instance is using."
-                />
+                <CardHeader title="Database" />
                 <CardBody>
                     <div className="flex flex-wrap items-center gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -64,7 +58,7 @@ export default function Data({ database, counts, settings, exports }) {
             </Card>
 
             <Card>
-                <CardHeader title="Records" description="What is currently stored." />
+                <CardHeader title="Records" />
                 <CardBody>
                     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {counts.map((row) => (
@@ -85,10 +79,7 @@ export default function Data({ database, counts, settings, exports }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Exports"
-                    description="Streamed as CSV, so a large directory does not have to fit in memory first."
-                />
+                <CardHeader title="Exports" />
                 <CardBody>
                     <ul className="divide-y divide-border">
                         {exports.map((item) => (
@@ -108,10 +99,7 @@ export default function Data({ database, counts, settings, exports }) {
             </Card>
 
             <Card>
-                <CardHeader
-                    title="Retention"
-                    description="How long audit entries are kept before they may be pruned."
-                />
+                <CardHeader title="Retention" />
                 <CardBody>
                     <form onSubmit={submit} className="flex flex-wrap items-end gap-4">
                         <Field

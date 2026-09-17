@@ -7,12 +7,11 @@ import {
     ClipboardList,
     FilePenLine,
     Lock,
-    Pencil,
     Plus,
-    Trash2,
     Upload,
     UserCheck,
 } from 'lucide-react';
+
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Button,
@@ -110,7 +109,8 @@ export default function Records({ logs, filters, summary, statuses, employees, c
     };
 
     const rows = logs.data ?? [];
-    const colSpan = can.manage ? 9 : 8;
+    const colSpan = 8;
+
 
     return (
         <AppLayout
@@ -231,7 +231,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                             <TH className="text-right">Late</TH>
                             <TH className="text-right">Undertime</TH>
                             <TH className="text-right">Past shift</TH>
-                            {can.manage && <TH className="text-right">Actions</TH>}
                         </TR>
                     </THead>
                     <TBody>
@@ -298,30 +297,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                                     <TD className="text-right text-sm tabular-nums">
                                         {minutes(log.overtime_minutes)}
                                     </TD>
-                                    {can.manage && (
-                                        <TD className="text-right">
-                                            {!log.locked && (
-                                                <div className="flex justify-end gap-1">
-                                                    <Button
-                                                        size="icon"
-                                                        variant="ghost"
-                                                        onClick={() => openEdit(log)}
-                                                        aria-label="Edit record"
-                                                    >
-                                                        <Pencil className="h-4 w-4" />
-                                                    </Button>
-                                                    <Button
-                                                        size="icon"
-                                                        variant="ghost"
-                                                        onClick={() => remove(log)}
-                                                        aria-label="Delete record"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </TD>
-                                    )}
                                 </TR>
                             ))
                         )}
@@ -335,7 +310,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                 show={editing !== null}
                 onClose={close}
                 title={editing === 'new' ? 'Add Time Record' : 'Edit Time Record'}
-                description="Status, lateness, undertime and night differential are computed from the punches and the employee's shift."
             >
                 <form onSubmit={submit} className="space-y-4">
                     {editing === 'new' ? (

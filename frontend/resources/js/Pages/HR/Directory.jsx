@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { X, Building2, ChevronDown, ChevronRight, ShieldAlert, Users } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
+import OrgTabs from './MasterData/Partials/OrgTabs';
 import { Badge, Card, CardBody, CardHeader, StatCard } from '@/Components/ui';
 import { cn, initials } from '@/lib/utils';
 
@@ -224,7 +225,16 @@ export default function Directory({ departments, unassigned, filters, total }) {
     const shown = departments.reduce((sum, department) => sum + department.headcount, 0);
 
     return (
-        <AppLayout title="Departments">
+        <AppLayout
+            title="Departments & Positions"
+            breadcrumbs={[
+                { label: 'Human Resource' },
+                { label: 'Employee Information', href: '/hr/employees' },
+                { label: 'Departments & Positions' },
+            ]}
+        >
+            <OrgTabs currentTab="directory" />
+
             <div className="mb-5 grid gap-4 sm:grid-cols-3">
                 <StatCard
                     label="People Listed"

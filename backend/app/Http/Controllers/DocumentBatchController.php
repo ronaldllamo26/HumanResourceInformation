@@ -26,7 +26,7 @@ use Inertia\Response;
 class DocumentBatchController extends Controller
 {
     /** Matches StoreEmployeeDocumentRequest — one file's limits, applied per file. */
-    private const PER_FILE_RULES = ['file', 'max:10240', 'mimes:jpg,jpeg,png,webp'];
+    private const PER_FILE_RULES = ['file', 'max:10240', 'mimes:jpg,jpeg,png,webp,pdf'];
 
     /**
      * Enough to clear a drawer, few enough to survive one request.
@@ -79,7 +79,7 @@ class DocumentBatchController extends Controller
             'files.*' => ['required', ...self::PER_FILE_RULES],
         ], [
             'files.max' => 'Up to '.self::MAX_FILES.' files at a time.',
-            'files.*.mimes' => 'Images only — a PDF is uploaded on the employee’s own record.',
+            'files.*.mimes' => 'Images and PDFs only.',
         ]);
 
         $result = $filer->process(

@@ -82,7 +82,6 @@ export default function Cycles({ cycles, types, can }) {
             <Card>
                 <CardHeader
                     title="Review Cycles"
-                    description="Rolling out a cycle builds every scorecard and creates the evaluations to be filled in."
                     action={
                         can.manage && (
                             <Button size="sm" onClick={() => open('new')}>

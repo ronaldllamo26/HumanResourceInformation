@@ -3,13 +3,16 @@ import { useState } from 'react';
 import {
     ArrowRightLeft,
     Briefcase,
+    Building2,
     Check,
     ChevronDown,
     Plus,
     TriangleAlert,
     Users,
+    X,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
+import OrgTabs from './Partials/OrgTabs';
 import {
     Badge,
     Button,
@@ -304,13 +307,15 @@ export default function Positions({
 
     return (
         <AppLayout
-            title="Positions"
+            title="Departments & Positions"
             breadcrumbs={[
                 { label: 'Human Resource' },
                 { label: 'Employee Information', href: '/hr/employees' },
-                { label: 'Positions' },
+                { label: 'Departments & Positions' },
             ]}
         >
+            <OrgTabs currentTab="positions" />
+
             <div className="mb-5 grid gap-4 sm:grid-cols-3">
                 <StatCard
                     label="Positions"
@@ -346,7 +351,6 @@ export default function Positions({
             <Card className="mb-5">
                 <CardHeader
                     title="Positions"
-                    description="Open a title to see who holds it. Moving somebody changes their record, not this list."
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Select
@@ -368,6 +372,34 @@ export default function Positions({
                         </div>
                     }
                 />
+                {filters.department_id && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-secondary/30 px-5 py-2.5 text-xs">
+                        <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-muted-foreground">
+                                Filtered by Department:{' '}
+                                <strong className="text-foreground">
+                                    {departments.find((d) => String(d.value) === String(filters.department_id))?.label ?? 'Selected Department'}
+                                </strong>
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Link
+                                href="/hr/departments"
+                                className="text-xs text-primary hover:underline"
+                            >
+                                &larr; Back to Departments
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={() => filter('department_id', '')}
+                                className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-secondary/80 transition-colors"
+                            >
+                                <X className="h-3 w-3" /> Clear filter
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Card>
 
             {positions.length === 0 ? (

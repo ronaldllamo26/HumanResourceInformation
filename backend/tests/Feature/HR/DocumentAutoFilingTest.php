@@ -284,6 +284,99 @@ class DocumentAutoFilingTest extends TestCase
      */
 
     /** @param  array{filed: int, documents: array<int, array<string, mixed>>}  $result */
+    /*
+     * -----------------------------------------------------------------
+     * The two gates the anomaly and ID checks added
+     * -----------------------------------------------------------------
+     */
+
+    /**
+     * A reading that argues with itself is held, not filed.
+     *
+     * On the upload form a future issue date is a warning somebody reads and
+     * decides about. Unattended there is nobody to read it, and filing the
+     * reading would store the contradiction as a fact — so the row goes to the
+     * review table with the anomaly quoted, rather than with "held" and no
+     * cause.
+     */
+    public function test_a_document_whose_dates_contradict_themselves_is_held(): void
+    {
+        $this->driver();
+
+        $result = $this->filerReading([[
+            ...$this->cleanLicence(),
+            'issued_at' => now()->addYear()->toDateString(),
+        ]])->process([$this->image()], Employee::all());
+
+        $this->assertSame(0, $result['filed']);
+        $this->assertHeldFor('future', $result);
+    }
+
+    public function test_the_anomaly_gate_can_be_switched_off(): void
+    {
+        config(['scanner.autofile.hold_anomalies' => false]);
+        $this->driver();
+
+        $result = $this->filerReading([[
+            ...$this->cleanLicence(),
+            'issued_at' => now()->addYear()->toDateString(),
+        ]])->process([$this->image()], Employee::all());
+
+        $this->assertSame(1, $result['filed'], 'with the gate off the reading files as before');
+    }
+
+    /**
+     * A government ID number that is not the shape its agency prints.
+     *
+     * HR keys real numbers that fail a format rule, which is why the form only
+     * warns — but with nobody looking, a malformed number is as likely to be a
+     * misread digit as a real one.
+     */
+    public function test_a_government_id_with_a_malformed_number_is_held(): void
+    {
+        $employee = Employee::factory()->create([
+            'first_name' => 'Juan',
+            'middle_name' => null,
+            'last_name' => 'Dela Cruz',
+            'suffix' => null,
+            'sss_number' => '3412345678',
+        ]);
+
+        $result = $this->filerReading([[
+            'type' => 'government_id',
+            'title' => 'REPUBLIC OF THE PHILIPPINES · SOCIAL SECURITY SYSTEM',
+            'name_on_document' => 'DELA CRUZ, JUAN',
+            // Eight digits where SSS prints ten.
+            'document_number' => '34123456',
+        ]])->process([$this->image()], Employee::all());
+
+        $this->assertSame(0, $result['filed']);
+        $this->assertHeldFor('SSS', $result);
+        $this->assertSame(0, $employee->documents()->count());
+    }
+
+    /** The same card with the number it really carries files itself. */
+    public function test_a_well_formed_government_id_still_files(): void
+    {
+        $employee = Employee::factory()->create([
+            'first_name' => 'Juan',
+            'middle_name' => null,
+            'last_name' => 'Dela Cruz',
+            'suffix' => null,
+            'sss_number' => '3412345678',
+        ]);
+
+        $result = $this->filerReading([[
+            'type' => 'government_id',
+            'title' => 'REPUBLIC OF THE PHILIPPINES · SOCIAL SECURITY SYSTEM',
+            'name_on_document' => 'DELA CRUZ, JUAN',
+            'document_number' => '34-1234567-8',
+        ]])->process([$this->image()], Employee::all());
+
+        $this->assertSame(1, $result['filed']);
+        $this->assertTrue($employee->documents()->sole()->filed_automatically);
+    }
+
     private function assertHeldFor(string $fragment, array $result): void
     {
         $reasons = implode(' | ', $result['documents'][0]['held_for'] ?? []);

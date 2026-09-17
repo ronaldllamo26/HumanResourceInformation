@@ -28,10 +28,12 @@ use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\PositionController;
 use App\Http\Controllers\PrivacyNoticeController;
 use App\Http\Controllers\RecordIntegrityController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ReviewCycleController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\ScanAccuracyController;
 use App\Http\Controllers\SeparationController;
+use App\Http\Controllers\Settings\AuditLogController;
 use App\Http\Controllers\Settings\DataExportController;
 use App\Http\Controllers\Settings\IntegrationController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -330,6 +332,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
                 ->name('legacy');
         });
 
+        /*
+         * Reports — one screen for every report, and the CSV/PDF of whatever
+         * is on it. HR and admin only; each download writes an `exported`
+         * audit row, because a report is many people's records in one file.
+         */
+        Route::get('reports', [ReportController::class, 'index'])->name('reports');
+        Route::get('reports/export/{format}', [ReportController::class, 'export'])->name('reports.export');
         // Module 3 — Leave & Absence
         Route::get('leave', [LeaveController::class, 'index'])->name('leave');
         Route::post('leave', [LeaveController::class, 'store'])->name('leave.store');
@@ -482,19 +491,38 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
     Route::get('users', [UserAccessController::class, 'index'])->name('users');
     Route::post('users', [UserAccessController::class, 'store'])->name('users.store');
     Route::post('users/access-review', [UserAccessController::class, 'review'])->name('users.review');
+    Route::put('users/{user}/profile', [UserAccessController::class, 'updateProfile'])->name('users.profile');
     Route::put('users/{user}/role', [UserAccessController::class, 'updateRole'])->name('users.role');
     Route::post('users/{user}/toggle', [UserAccessController::class, 'toggleActive'])->name('users.toggle');
     Route::post('users/{user}/reset-password', [UserAccessController::class, 'resetPassword'])->name('users.reset');
+    /*
+     * A real code to the connected inbox, now — the only way to find a typo
+     * in the address or a broken mailer before somebody cannot sign in.
+     */
+    Route::post('users/{user}/otp-test', [UserAccessController::class, 'sendTestCode'])
+        ->middleware('throttle:6,1')
+        ->name('users.otpTest');
 
     Route::get('security', [SecurityController::class, 'index'])->name('security');
     Route::put('security/profile', [SecurityController::class, 'updateProfile'])->name('security.profile');
     Route::put('security/password', [SecurityController::class, 'updatePassword'])->name('security.password');
+    Route::put('security/otp', [SecurityController::class, 'updateOtpEmail'])->name('security.otp');
+    Route::post('security/otp/test', [SecurityController::class, 'sendOtpTest'])->name('security.otp.test');
     Route::post('security/tokens/revoke-all', [SecurityController::class, 'revokeTokens'])->name('security.tokens.revokeAll');
     Route::delete('security/tokens/{token}', [SecurityController::class, 'revokeToken'])->name('security.tokens.revoke');
     Route::delete('security/account', [SecurityController::class, 'destroyAccount'])->name('security.account');
-    Route::post('security/audit/verify', [SecurityController::class, 'verifyAuditLog'])
+    /*
+     * Audit Logs — its own screen under Administration rather than 50 rows at
+     * the bottom of Settings → Security. Behind `viewAuditLog` (HR and admin),
+     * the same gate the log has always had; the export writes its own
+     * `exported` row, and the signature check is throttled because it reads
+     * the whole table.
+     */
+    Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs');
+    Route::get('audit-logs/export', [AuditLogController::class, 'export'])->name('audit-logs.export');
+    Route::post('audit-logs/verify', [AuditLogController::class, 'verify'])
         ->middleware('throttle:6,1')
-        ->name('security.audit.verify');
+        ->name('audit-logs.verify');
 
     Route::get('data', [SettingsController::class, 'data'])->name('data');
     Route::put('data', [SettingsController::class, 'updateData'])->name('data.update');

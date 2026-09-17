@@ -133,7 +133,6 @@ export default function Separations({
             <Card>
                 <CardHeader
                     title="Separations"
-                    description={`DOLE Labor Advisory 06-20 puts final pay within ${releaseWithinDays} days of the last day of employment.`}
                     action={
                         <div className="flex flex-col gap-2 sm:flex-row">
                             <Select
