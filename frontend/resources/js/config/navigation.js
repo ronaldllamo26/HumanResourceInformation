@@ -66,6 +66,12 @@ export const NAV_GROUPS = [
                 icon: IdCard,
                 children: [
                     {
+                        id: 'employee-list',
+                        label: 'Employee Directory',
+                        icon: Users,
+                        href: '/hr/employees',
+                    },
+                    {
                         /*
                          * The signed-in user's own 201 file and personal records.
                          */
@@ -108,12 +114,6 @@ export const NAV_GROUPS = [
                         label: 'Departments',
                         icon: Building2,
                         href: '/hr/directory',
-                    },
-                    {
-                        id: 'employee-list',
-                        label: 'Employee Directory',
-                        icon: Users,
-                        href: '/hr/employees',
                     },
                     /*
                      * The master-data Departments screen has left this list.

@@ -52,7 +52,12 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
     }, [currentUrl, groups]);
 
     const handleParentClick = (item) => {
-        setExpandedModule((prev) => (prev === item.id ? null : item.id));
+        setExpandedModule(item.id);
+
+        const first = item.children?.[0];
+        if (first?.href && !isHrefActive(first.href, currentUrl)) {
+            router.visit(first.href);
+        }
     };
 
     return (
