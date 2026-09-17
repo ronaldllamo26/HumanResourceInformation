@@ -40,6 +40,17 @@ class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
 
+        // Normalize login input so requests with either 'username' or 'email' work seamlessly
+        if (! $this->app->runningInConsole()) {
+            $input = request()->input('username') ?? request()->input('email');
+            if ($input !== null) {
+                request()->merge([
+                    'email' => $input,
+                    'username' => $input,
+                ]);
+            }
+        }
+
         $this->refuseDeactivatedAccounts();
         $this->registerViews();
     }

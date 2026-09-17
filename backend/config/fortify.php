@@ -54,7 +54,7 @@ return [
      * `email` below is unchanged: the forgot-password flow still sends its
      * link to the address on the account.
      */
-    'username' => 'email',
+    'username' => 'username',
 
     'email' => 'email',
 
