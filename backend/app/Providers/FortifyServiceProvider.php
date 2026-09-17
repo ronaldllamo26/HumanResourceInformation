@@ -57,7 +57,11 @@ class FortifyServiceProvider extends ServiceProvider
     private function refuseDeactivatedAccounts(): void
     {
         Fortify::authenticateUsing(function (Request $request) {
-            $user = User::where('username', $request->input(Fortify::username()))->first();
+            $login = (string) $request->input(Fortify::username());
+            $user = User::where('username', $login)
+                ->orWhere('email', $login)
+                ->orWhere('username', strstr($login, '@', true) ?: $login)
+                ->first();
 
             if (! $user || ! Hash::check((string) $request->input('password'), $user->password)) {
                 return null;
