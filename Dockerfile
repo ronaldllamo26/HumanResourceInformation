@@ -1,13 +1,12 @@
 FROM php:8.3-cli-alpine
 
-# Install pre-compiled PHP extensions instantly via installer (0 compilation time)
-ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-RUN chmod +x /usr/local/bin/install-php-extensions && install-php-extensions \
+# Get pre-built extension installer from Docker Hub (prevents cache-busting on every commit)
+COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
+RUN install-php-extensions \
     bcmath \
     exif \
     gd \
     intl \
-    opcache \
     pcntl \
     pdo_pgsql \
     pgsql \
