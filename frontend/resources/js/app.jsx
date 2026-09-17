@@ -42,6 +42,11 @@ createInertiaApp({
             </ThemeProvider>,
         );
     },
-    // No top loading bar between pages, at the owner's request.
-    progress: false,
+    // Top loading bar on page transitions with spinner for immediate visual feedback
+    progress: {
+        color: '#2563eb',
+        showSpinner: true,
+        delay: 0,
+        includeCSS: true,
+    },
 });

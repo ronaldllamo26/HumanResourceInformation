@@ -10,6 +10,7 @@ use App\Services\EmployeeService;
 use App\Services\LeaveService;
 use App\Services\NotificationFeed;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -57,33 +58,31 @@ class HandleInertiaRequests extends Middleware
             'importErrors' => fn () => $request->session()->get('importErrors', []),
             // Brand text, so the logo and payslip header follow whatever
             // Settings > General holds rather than a hardcoded string.
-            'brand' => fn () => [
+            'brand' => fn () => Cache::remember('setting.brand', 300, fn () => [
                 'name' => Setting::get('company.name'),
                 'tagline' => Setting::get('company.tagline'),
-            ],
+            ]),
             // Leave requests waiting on *this* user, for the topbar badge.
-            // Lazily evaluated, so guests and API calls never run the query.
+            // Cached briefly to avoid hitting the database on every module navigation.
             'pendingApprovals' => fn () => $request->user()
-                ? app(LeaveService::class)->pendingApprovalsFor($request->user())
+                ? Cache::remember("user_{$request->user()->id}_pending_approvals", 60, fn () => app(LeaveService::class)->pendingApprovalsFor($request->user()))
                 : 0,
             // Everything waiting on this user to decide — leave, overtime, DTR
-            // corrections, new hires — for the bell's badge. The list behind
-            // it is fetched only when the bell is opened.
+            // corrections, new hires — for the bell's badge.
             'notificationCount' => fn () => $request->user()
-                ? app(NotificationFeed::class)->count($request->user())
+                ? Cache::remember("user_{$request->user()->id}_notification_count", 60, fn () => app(NotificationFeed::class)->count($request->user()))
                 : 0,
             // Lapsed or soon-to-lapse 201 documents, scoped to what this user
             // may see — so an employee's own licence warns them directly.
-            // Lazy for the same reason as the badge above.
             'expiringCredentials' => fn () => $request->user()
-                ? app(CredentialExpiryScanner::class)->countFor(
+                ? Cache::remember("user_{$request->user()->id}_expiring_credentials", 120, fn () => app(CredentialExpiryScanner::class)->countFor(
                     EmployeeDocument::query()->whereIn(
                         'employee_id',
                         app(EmployeeService::class)
                             ->scopedQuery($request->user())
                             ->select('employees.id'),
                     ),
-                )
+                ))
                 : 0,
 
             /*
@@ -93,11 +92,9 @@ class HandleInertiaRequests extends Middleware
              * figure is company-wide: a supervisor being told "4 waiting" for a
              * queue they cannot open is a leak of hiring activity dressed up as
              * a badge. Zero for everyone else, which draws no badge at all.
-             *
-             * Lazy like the two above, so guests and API calls never run it.
              */
             'pendingEndorsements' => fn () => $request->user()?->can('viewAny', EmployeeEndorsement::class)
-                ? EmployeeEndorsement::pending()->count()
+                ? Cache::remember('pending_endorsements_count', 60, fn () => EmployeeEndorsement::pending()->count())
                 : 0,
 
             /*

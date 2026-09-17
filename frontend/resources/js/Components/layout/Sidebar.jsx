@@ -35,28 +35,59 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
      * read off the entry so the two cannot disagree about the same URL, and a
      * control that never shows it is current is one people click twice.
      */
-    const settingsActive = currentUrl.split('?')[0].startsWith('/settings');
+    const [pendingHref, setPendingHref] = useState(null);
+
+    // Keep pending state in sync with Inertia visit lifecycle
+    useEffect(() => {
+        const unregisterStart = router.on('start', (event) => {
+            const path = event.detail?.visit?.url?.pathname || event.detail?.visit?.url;
+            if (path) setPendingHref(typeof path === 'string' ? path : path.pathname);
+        });
+        const unregisterFinish = router.on('finish', () => {
+            setPendingHref(null);
+        });
+
+        return () => {
+            unregisterStart();
+            unregisterFinish();
+        };
+    }, []);
+
+    const effectiveUrl = pendingHref || currentUrl;
+    const settingsActive = effectiveUrl.split('?')[0].startsWith('/settings');
 
     // Accordion: at most one module open at a time.
     const [expandedModule, setExpandedModule] = useState(null);
 
-    // Keep the accordion in sync with whichever module owns the current URL.
+    // Keep the accordion in sync with whichever module owns the effective URL.
     useEffect(() => {
         const owner = groups
             .flatMap((group) => group.items)
             .find((item) =>
-                item.children?.some((child) => isHrefActive(child.href, currentUrl)),
+                item.children?.some((child) => isHrefActive(child.href, effectiveUrl)),
             );
 
         if (owner) setExpandedModule(owner.id);
-    }, [currentUrl, groups]);
+    }, [effectiveUrl, groups]);
 
     const handleParentClick = (item) => {
         setExpandedModule(item.id);
 
         const first = item.children?.[0];
-        if (first?.href && !isHrefActive(first.href, currentUrl)) {
+        if (first?.href && !isHrefActive(first.href, effectiveUrl)) {
+            setPendingHref(first.href);
             router.visit(first.href);
+        }
+    };
+
+    const handleParentMouseEnter = (item) => {
+        const first = item.children?.[0];
+        if (first?.href && !isHrefActive(first.href, effectiveUrl)) {
+            try {
+                if (typeof router.prefetch === 'function') {
+                    router.prefetch(first.href, { method: 'get' }, { cacheFor: '1m' });
+                }
+            } catch (_) {}
         }
     };
 
@@ -184,7 +215,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
                                 {group.items.map((item) => {
                                     const Icon = item.icon;
                                     const hasChildren = Boolean(item.children?.length);
-                                    const active = isItemActive(item, currentUrl);
+                                    const active = isItemActive(item, effectiveUrl);
                                     const isOpen = expandedModule === item.id && !collapsed;
 
                                     const rowClasses = cn(
@@ -228,6 +259,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
                                                 <button
                                                     type="button"
                                                     onClick={() => handleParentClick(item)}
+                                                    onMouseEnter={() => handleParentMouseEnter(item)}
                                                     className={rowClasses}
                                                     title={collapsed ? item.label : undefined}
                                                     aria-expanded={isOpen}
@@ -257,7 +289,11 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
                                             ) : (
                                                 <Link
                                                     href={item.href}
-                                                    onClick={onCloseMobile}
+                                                    prefetch="hover"
+                                                    onClick={() => {
+                                                        setPendingHref(item.href);
+                                                        onCloseMobile();
+                                                    }}
                                                     className={rowClasses}
                                                     title={collapsed ? item.label : undefined}
                                                     aria-current={active ? 'page' : undefined}
@@ -292,14 +328,18 @@ export default function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCl
                                                             const ChildIcon = child.icon;
                                                             const childActive = isHrefActive(
                                                                 child.href,
-                                                                currentUrl,
+                                                                effectiveUrl,
                                                             );
 
                                                             return (
                                                                 <li key={child.id}>
                                                                     <Link
                                                                         href={child.href}
-                                                                        onClick={onCloseMobile}
+                                                                        prefetch="hover"
+                                                                        onClick={() => {
+                                                                            setPendingHref(child.href);
+                                                                            onCloseMobile();
+                                                                        }}
                                                                         tabIndex={
                                                                             isOpen ? 0 : -1
                                                                         }

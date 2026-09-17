@@ -35,6 +35,7 @@ class CredentialExpiryScanner
 
         $documents = (clone $query)->reorder()
             ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', $today->copy()->addDays(60))
             ->with('employee:id,employee_number,first_name,middle_name,last_name,suffix,department_id')
             ->with('employee.department:id,name')
             ->get();
@@ -52,10 +53,23 @@ class CredentialExpiryScanner
             ->values();
     }
 
-    /** The count for the topbar indicator — the same rules, without the rows. */
+    /** The count for the topbar indicator — the same rules, without loading relations or sorting. */
     public function countFor(Builder $query): int
     {
-        return $this->scan($query)->count();
+        $today = Carbon::today();
+
+        // Max warning window across all types is 60 days (config/credentials.php)
+        return (clone $query)->reorder()
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<=', $today->copy()->addDays(60))
+            ->get(['id', 'type', 'expires_at'])
+            ->filter(function (EmployeeDocument $document) use ($today) {
+                $days = (int) $today->diffInDays($document->expires_at->copy()->startOfDay(), false);
+                $window = $this->windowFor($document->type);
+
+                return $days < 0 || $days <= $window;
+            })
+            ->count();
     }
 
     /**
