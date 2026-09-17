@@ -1,16 +1,38 @@
-FROM php:8.3-cli-alpine
+FROM alpine:3.20
 
-# Get pre-built extension installer from Docker Hub (prevents cache-busting on every commit)
-COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions \
-    bcmath \
-    exif \
-    gd \
-    intl \
-    pcntl \
-    pdo_pgsql \
-    pgsql \
-    zip
+# Install PHP 8.3 and all extensions as instant pre-compiled binaries (0 compilation time, takes ~10s)
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    php83 \
+    php83-cli \
+    php83-common \
+    php83-bcmath \
+    php83-ctype \
+    php83-curl \
+    php83-dom \
+    php83-exif \
+    php83-fileinfo \
+    php83-gd \
+    php83-intl \
+    php83-mbstring \
+    php83-opcache \
+    php83-openssl \
+    php83-pcntl \
+    php83-pdo \
+    php83-pdo_pgsql \
+    php83-pgsql \
+    php83-phar \
+    php83-session \
+    php83-simplexml \
+    php83-sodium \
+    php83-tokenizer \
+    php83-xml \
+    php83-xmlwriter \
+    php83-zip \
+    && ln -sf /usr/bin/php83 /usr/bin/php \
+    && addgroup -g 82 -S www-data 2>/dev/null || true \
+    && adduser -u 82 -D -S -G www-data www-data 2>/dev/null || true
 
 # Get Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
