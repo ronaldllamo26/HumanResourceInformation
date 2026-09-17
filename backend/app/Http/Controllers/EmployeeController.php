@@ -233,8 +233,8 @@ class EmployeeController extends Controller
 
         if (! $employee) {
             return redirect()
-                ->route('dashboard')
-                ->with('info', 'No employee 201 record is linked to this account. Contact HR to link your record.');
+                ->route('employees.index')
+                ->with('info', 'No employee 201 record is linked to this account.');
         }
 
         return $this->show($request, $employee, isMyProfile: true);

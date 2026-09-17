@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Employee;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AuditLogSigner;
@@ -20,14 +21,14 @@ Artisan::command('inspire', function () {
  * the passwords they had chosen. An existing login is the signal to stop.
  */
 Artisan::command('hris:seed-if-empty', function () {
-    if (User::query()->exists()) {
-        $this->info('Accounts already exist — not seeding.');
+    if (Employee::query()->exists()) {
+        $this->info('Employee records already exist — not seeding.');
 
         return;
     }
 
     $this->call('db:seed', ['--force' => true]);
-})->purpose('Seed the database only if it has no accounts yet');
+})->purpose('Seed the database only if it has no employee records yet');
 
 /*
  * Sets the admin password from HRIS_ADMIN_PASSWORD — once per value.
