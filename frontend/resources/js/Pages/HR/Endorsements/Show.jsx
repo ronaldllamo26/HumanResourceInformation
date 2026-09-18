@@ -296,11 +296,6 @@ export default function Show({ endorsement, fullName, missing, can }) {
                                     </li>
                                 ))}
                             </ul>
-
-                            <p className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
-                                These are asked on the employee form when you approve. Nobody is
-                                added to payroll until it is saved.
-                            </p>
                         </CardBody>
                     </Card>
                 )}

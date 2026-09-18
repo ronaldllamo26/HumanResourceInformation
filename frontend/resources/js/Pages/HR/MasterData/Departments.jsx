@@ -1,13 +1,13 @@
 import { Link, useForm } from '@inertiajs/react';
 import { Fragment, useState } from 'react';
 import {
+    ArrowLeft,
     ArrowRight,
     ArrowRightLeft,
     Briefcase,
     Building2,
     Check,
     ChevronDown,
-    ChevronRight,
     ExternalLink,
     Network,
     Plus,
@@ -18,7 +18,6 @@ import {
     UserCheck,
     UserX,
     Users,
-    X,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import OrgTabs from './Partials/OrgTabs';
@@ -75,18 +74,8 @@ export default function Departments({
     departmentOptions = [],
     moveTargets = [],
 }) {
-    // Initial view mode from query param ?view=tree|departments|positions
-    const [viewMode, setViewMode] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const param = new URLSearchParams(window.location.search).get('view');
-            if (param && ['tree', 'departments', 'positions'].includes(param)) {
-                return param;
-            }
-        }
-        return 'tree';
-    });
-
     const [searchQuery, setSearchQuery] = useState(filters.search ?? '');
+    const [selectedDeptId, setSelectedDeptId] = useState(null);
     const [expandedDeptIds, setExpandedDeptIds] = useState(
         () => new Set(departments.map((d) => d.id)),
     );
@@ -227,32 +216,51 @@ export default function Departments({
     });
 
     const activeRate = summary.total > 0 ? (summary.active / summary.total) * 100 : 0;
-    const totalStaff = summary.total_employees ?? departments.reduce((acc, d) => acc + d.employees_count, 0);
-    const totalPositions = summary.total_positions ?? departments.reduce((acc, d) => acc + d.positions_count, 0);
+    const totalStaff =
+        summary.total_employees ?? departments.reduce((acc, d) => acc + d.employees_count, 0);
+    const totalPositions =
+        summary.total_positions ?? departments.reduce((acc, d) => acc + d.positions_count, 0);
+
+    const selectedDept = selectedDeptId
+        ? filteredDepartments.find((d) => d.id === selectedDeptId) ||
+          departments.find((d) => d.id === selectedDeptId)
+        : null;
+    const selectedPositions = selectedDept ? (selectedDept.positions ?? []) : [];
+    const selectedUnassigned = selectedDept ? (selectedDept.unassigned_employees ?? []) : [];
 
     return (
         <AppLayout
-            title="Organization Chart"
+            /*
+                "Departments", matching the sidebar entry rather than the
+                merged one it replaced. The nav row was `Organization Chart`
+                covering both screens; splitting it into Departments and
+                Positions left this page still titled after the entry that no
+                longer exists, so the sidebar said one thing and the heading
+                another about the same screen.
+            */
+            title="Departments"
             breadcrumbs={[
                 { label: 'Human Resource' },
                 { label: 'Employee Information', href: '/hr/employees' },
-                { label: 'Organization Chart' },
+                { label: 'Departments' },
             ]}
         >
-            <OrgTabs
-                currentTab={viewMode}
-                viewMode={viewMode}
-                onViewModeChange={(mode) => setViewMode(mode)}
-            />
-
             {/* SUMMARY STATS */}
-            <div className="mb-5 grid gap-4 sm:grid-cols-4">
+            {/*
+                `gap-5` and the dashboard's own breakpoints. These are the same
+                `StatCard`s the dashboard draws, and they were sitting in a
+                tighter grid that went to four columns straight from one — so
+                on a tablet the row was four squeezed tiles where the dashboard
+                shows two comfortable ones. Same component, different rhythm,
+                which is the half of "matching" that class names decide rather
+                than the component.
+            */}
+            <div className="mb-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     label="Active Staff"
                     value={totalStaff}
                     icon={Users}
                     tone={totalStaff > 0 ? 'primary' : 'muted'}
-                    hint="across all departments"
                 />
 
                 <StatCard
@@ -260,7 +268,6 @@ export default function Departments({
                     value={summary.total}
                     icon={Building2}
                     tone={summary.total > 0 ? 'info' : 'muted'}
-                    hint={`${summary.active} active units`}
                 />
 
                 <StatCard
@@ -268,7 +275,6 @@ export default function Departments({
                     value={totalPositions}
                     icon={Briefcase}
                     tone={totalPositions > 0 ? 'success' : 'muted'}
-                    hint="registered titles"
                 />
 
                 <StatCard
@@ -276,631 +282,378 @@ export default function Departments({
                     value={summary.empty}
                     icon={UserX}
                     tone={summary.empty > 0 ? 'warning' : 'muted'}
-                    hint="departments without staff"
                 />
             </div>
 
-            {/* UNIFIED CONTROL TOOLBAR */}
-            <Card className="mb-6">
-                <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-1 items-center gap-2">
-                        <div className="relative w-full max-w-sm">
-                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search employees, positions, departments..."
-                                className="pl-9 text-xs"
-                            />
-                            {searchQuery && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-secondary"
-                                >
-                                    <X className="h-3.5 w-3.5" />
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="hidden items-center gap-1.5 md:flex">
+            {/* ORGANIZATION CHART CONTENT */}
+            <div className="space-y-6">
+                {selectedDept ? (
+                    /* VIEW: SPECIFIC DEPARTMENT POSITIONS */
+                    <div className="space-y-6">
+                        <div>
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={expandAll}
-                                className="h-8 text-xs"
+                                onClick={() => setSelectedDeptId(null)}
+                                className="h-9 gap-1.5 text-xs font-semibold"
                             >
-                                Expand All
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={collapseAll}
-                                className="h-8 text-xs"
-                            >
-                                Collapse All
+                                <ArrowLeft className="h-3.5 w-3.5" />
+                                <span>Back to All Departments</span>
                             </Button>
                         </div>
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                            variant="secondary"
-                            onClick={() => openPosModal()}
-                            className="h-9 gap-1.5 text-xs font-semibold"
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span>New Position</span>
-                        </Button>
-                        <Button
-                            onClick={openDeptModal}
-                            className="h-9 gap-1.5 text-xs font-semibold"
-                        >
-                            <Plus className="h-4 w-4" />
-                            <span>New Department</span>
-                        </Button>
-                    </div>
-                </CardBody>
-            </Card>
-
-            {/* VIEW MODE 1: VISUAL HIERARCHY TREE */}
-            {viewMode === 'tree' && (
-                <div className="space-y-8">
-                    {/* Top Root Node: Company */}
-                    <div className="flex flex-col items-center text-center">
-                        <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-primary/40 bg-card p-5 shadow-md">
-                            <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                                <Building2 className="h-6 w-6" />
-                            </div>
-                            <h2 className="mt-3 text-base font-extrabold tracking-tight text-foreground">
-                                PRIMEPOWER MANPOWER SERVICES
-                            </h2>
-                            <p className="text-xs font-medium text-muted-foreground">
-                                Enterprise Organization Chart & Directory
-                            </p>
-                            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-border pt-3">
-                                <Badge variant="secondary" className="font-mono text-xs">
-                                    {summary.total} Departments
-                                </Badge>
-                                <Badge variant="secondary" className="font-mono text-xs">
-                                    {totalPositions} Positions
-                                </Badge>
-                                <Badge variant="primary" className="font-mono text-xs">
-                                    {totalStaff} Active Staff
-                                </Badge>
-                            </div>
-                        </div>
-
-                        {/* Trunk line connecting to departments */}
-                        <div className="h-8 w-0.5 bg-primary/30" />
-                    </div>
-
-                    {/* Department Nodes Grid / Branches */}
-                    {filteredDepartments.length === 0 ? (
+                        {/* Selected Department Banner */}
                         <Card>
-                            <CardBody className="py-12 text-center">
-                                <p className="text-sm font-medium text-foreground">
-                                    No organization records match &ldquo;{searchQuery}&rdquo;
-                                </p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    Try clearing your search or adding a new department.
-                                </p>
+                            <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-start gap-3">
+                                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                                        <Building2 className="h-6 w-6" />
+                                    </span>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-lg font-bold text-foreground">
+                                                {selectedDept.name}
+                                            </h2>
+                                            <Badge
+                                                variant="outline"
+                                                className="font-mono text-xs font-semibold text-primary"
+                                            >
+                                                {selectedDept.code}
+                                            </Badge>
+                                        </div>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                            {selectedDept.employees_count} active staff &bull;{' '}
+                                            {selectedPositions.length} positions
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <Button
+                                    onClick={() => openPosModal(selectedDept.id)}
+                                    className="h-9 gap-1.5 self-start text-xs font-semibold sm:self-auto"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    <span>Add Position to {selectedDept.code}</span>
+                                </Button>
                             </CardBody>
                         </Card>
-                    ) : (
-                        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                            {filteredDepartments.map((dept) => {
-                                const isExpanded = expandedDeptIds.has(dept.id);
-                                const positions = dept.positions ?? [];
-                                const unassigned = dept.unassigned_employees ?? [];
 
-                                return (
-                                    <div
-                                        key={dept.id}
-                                        className="flex flex-col rounded-xl border border-border bg-card shadow-xs transition-shadow hover:shadow-md"
+                        {/* Positions Grid */}
+                        {selectedPositions.length === 0 ? (
+                            <Card>
+                                <CardBody className="py-12 text-center">
+                                    <Briefcase className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                                    <p className="mt-2 text-sm font-semibold text-foreground">
+                                        No positions configured for {selectedDept.name}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Get started by adding the first job position to this
+                                        department.
+                                    </p>
+                                    <Button
+                                        onClick={() => openPosModal(selectedDept.id)}
+                                        className="mt-4 h-8 gap-1.5 text-xs"
                                     >
-                                        {/* Department Node Header */}
-                                        <div className="flex items-start justify-between border-b border-border p-4">
-                                            <div className="flex items-start gap-3">
-                                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                                                    <Building2 className="h-5 w-5" />
-                                                </span>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="text-sm font-bold text-foreground">
-                                                            {dept.name}
-                                                        </h3>
-                                                        <span className="font-mono text-xs font-semibold text-primary">
-                                                            [{dept.code}]
-                                                        </span>
+                                        <Plus className="h-3.5 w-3.5" />
+                                        <span>Add Position</span>
+                                    </Button>
+                                </CardBody>
+                            </Card>
+                        ) : (
+                            /*
+                                The position cards inside a department, brought
+                                to the same house style as the department cards
+                                above — otherwise clicking a department just
+                                moved the mismatch one level in, which is worse
+                                than leaving it on the outside where it was at
+                                least consistent with itself.
+
+                                Same three changes: the shared `Card floating`
+                                instead of a hand-rolled div with `shadow-xs`,
+                                `font-semibold` rather than `font-bold`, and
+                                `gap-5` to match the grid above it.
+
+                                Written as a plain block comment with no
+                                surrounding braces, because this sits in an
+                                expression slot — the else arm of a ternary —
+                                where braces would be read as an object literal
+                                rather than a JSX comment. The comment two
+                                hundred lines up is written the same way for the
+                                same reason; the braced form cost a build here.
+
+                                And the version of this note that spelled both
+                                forms out literally cost a second one: a block
+                                comment cannot contain its own terminator, so
+                                the example closed the comment early and the
+                                rest of the sentence became code.
+                            */
+                            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                                {selectedPositions.map((pos) => {
+                                    const holders = pos.employees ?? [];
+                                    return (
+                                        <Card
+                                            key={pos.id}
+                                            floating
+                                            className="flex flex-col p-4"
+                                        >
+                                            <div className="border-b border-border/60 pb-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Briefcase
+                                                                className="h-4 w-4 shrink-0 text-primary"
+                                                                aria-hidden="true"
+                                                            />
+                                                            <h3 className="truncate text-sm font-semibold text-foreground">
+                                                                {pos.title}
+                                                            </h3>
+                                                        </div>
                                                     </div>
-                                                    <p className="mt-0.5 text-xs text-muted-foreground">
-                                                        {dept.employees_count} staff &bull; {positions.length} positions
-                                                    </p>
+                                                    <Badge
+                                                        variant={
+                                                            holders.length > 0
+                                                                ? 'secondary'
+                                                                : 'muted'
+                                                        }
+                                                        className="font-mono text-xs"
+                                                    >
+                                                        {holders.length} Staff
+                                                    </Badge>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openPosModal(dept.id)}
-                                                    title={`Add position to ${dept.name}`}
-                                                    className="grid h-8 w-8 place-items-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-primary transition-colors"
-                                                >
-                                                    <Plus className="h-4 w-4" />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleDept(dept.id)}
-                                                    className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                                                >
-                                                    <ChevronDown
-                                                        className={cn(
-                                                            'h-4 w-4 transition-transform duration-200',
-                                                            isExpanded && 'rotate-180',
-                                                        )}
-                                                    />
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Department Positions & Employees Branch */}
-                                        {isExpanded && (
-                                            <div className="flex-1 space-y-3 bg-secondary/15 p-4">
-                                                {positions.length === 0 ? (
-                                                    <div className="rounded-lg border border-dashed border-border/70 p-4 text-center">
-                                                        <p className="text-xs text-muted-foreground">
-                                                            No positions configured yet.
-                                                        </p>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => openPosModal(dept.id)}
-                                                            className="mt-1.5 h-7 text-xs text-primary"
-                                                        >
-                                                            <Plus className="mr-1 h-3.5 w-3.5" /> Add Position
-                                                        </Button>
-                                                    </div>
-                                                ) : (
-                                                    positions.map((pos) => {
-                                                        const holders = pos.employees ?? [];
-
-                                                        return (
-                                                            <div
-                                                                key={pos.id}
-                                                                className="rounded-lg border border-border bg-background p-3 shadow-xs"
-                                                            >
-                                                                {/* Position Node */}
-                                                                <div className="flex items-start justify-between gap-2 border-b border-border/50 pb-2">
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <Briefcase className="h-3.5 w-3.5 shrink-0 text-primary" />
-                                                                            <span className="truncate text-xs font-bold text-foreground">
-                                                                                {pos.title}
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                                            <span className="font-mono text-[10px] text-muted-foreground">
-                                                                                {pos.code}
-                                                                            </span>
-                                                                            {pos.salary_grade && (
-                                                                                <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                                                                                    SG-{pos.salary_grade}
-                                                                                </Badge>
-                                                                            )}
-                                                                            <SalaryBandBadge min={pos.min_salary} max={pos.max_salary} />
-                                                                        </div>
-                                                                    </div>
-                                                                    <Badge variant={holders.length > 0 ? 'secondary' : 'muted'} className="text-[11px]">
-                                                                        {holders.length}
-                                                                    </Badge>
-                                                                </div>
-
-                                                                {/* Assigned Staff */}
-                                                                <div className="mt-2 space-y-1.5">
-                                                                    {holders.length === 0 ? (
-                                                                        <p className="text-[11px] italic text-muted-foreground/80 py-0.5">
-                                                                            Position is currently unstaffed.
-                                                                        </p>
-                                                                    ) : (
-                                                                        holders.map((emp) => (
-                                                                            <div
-                                                                                key={emp.id}
-                                                                                className="group flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5 transition-colors hover:border-primary/50 hover:bg-secondary/40"
-                                                                            >
-                                                                                <Link
-                                                                                    href={`/hr/employees/${emp.id}`}
-                                                                                    className="flex min-w-0 flex-1 items-center gap-2"
-                                                                                    title={`View ${emp.full_name}'s employee directory record`}
-                                                                                >
-                                                                                    {emp.photo_url ? (
-                                                                                        <img
-                                                                                            src={emp.photo_url}
-                                                                                            alt=""
-                                                                                            className="h-7 w-7 shrink-0 rounded-full object-cover"
-                                                                                        />
-                                                                                    ) : (
-                                                                                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
-                                                                                            {initials(emp.full_name)}
-                                                                                        </span>
-                                                                                    )}
-                                                                                    <div className="min-w-0 flex-1">
-                                                                                        <p className="truncate text-xs font-medium text-foreground group-hover:text-primary transition-colors">
-                                                                                            {emp.full_name}
-                                                                                        </p>
-                                                                                        <p className="truncate font-mono text-[10px] text-muted-foreground">
-                                                                                            {emp.employee_number}
-                                                                                        </p>
-                                                                                    </div>
-                                                                                </Link>
-
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="sm"
-                                                                                    onClick={() => proposeMove(emp, pos)}
-                                                                                    className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-primary"
-                                                                                    title="Reassign to another position"
-                                                                                >
-                                                                                    <ArrowRightLeft className="h-3 w-3 mr-1" />
-                                                                                    <span>Move</span>
-                                                                                </Button>
-                                                                            </div>
-                                                                        ))
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })
-                                                )}
-
-                                                {/* Unassigned Staff */}
-                                                {unassigned.length > 0 && (
-                                                    <div className="rounded-lg border border-amber-300 bg-amber-50/50 p-2.5 dark:border-amber-900/50 dark:bg-amber-950/20">
-                                                        <p className="mb-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-                                                            Unassigned position ({unassigned.length}):
-                                                        </p>
-                                                        <div className="space-y-1">
-                                                            {unassigned.map((emp) => (
-                                                                <div
-                                                                    key={emp.id}
-                                                                    className="flex items-center justify-between gap-2 rounded bg-background p-1.5"
-                                                                >
-                                                                    <Link
-                                                                        href={`/hr/employees/${emp.id}`}
-                                                                        className="truncate text-xs font-medium text-foreground hover:text-primary"
-                                                                    >
-                                                                        {emp.full_name} ({emp.employee_number})
-                                                                    </Link>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="sm"
-                                                                        onClick={() => proposeMove(emp, { id: null, title: 'Unassigned' })}
-                                                                        className="h-5 px-1 text-[10px] text-primary"
-                                                                    >
-                                                                        Assign
-                                                                    </Button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* VIEW MODE 2: DEPARTMENTS & STAFF BREAKDOWN */}
-            {viewMode === 'departments' && (
-                <Card>
-                    <CardHeader
-                        title="Departments & Teams"
-                        description="Expand any department row to view full job position details and assigned staff."
-                        action={
-                            <Button onClick={openDeptModal}>
-                                <Plus className="h-4 w-4" />
-                                New Department
-                            </Button>
-                        }
-                    />
-
-                    <Table>
-                        <THead>
-                            <TR>
-                                <TH className="w-10"></TH>
-                                <TH>Code</TH>
-                                <TH>Department</TH>
-                                <TH className="text-right">Positions</TH>
-                                <TH className="text-right">Staff</TH>
-                                <TH>Status</TH>
-                                <TH className="text-right">Actions</TH>
-                            </TR>
-                        </THead>
-
-                        <TBody>
-                            {filteredDepartments.length === 0 ? (
-                                <TableEmpty
-                                    colSpan={7}
-                                    icon={Building2}
-                                    title="No departments found"
-                                    description="Try searching for a different name or create a new department."
-                                />
-                            ) : (
-                                filteredDepartments.map((department) => {
-                                    const isExpanded = expandedDeptIds.has(department.id);
-                                    const positions = department.positions ?? [];
-
-                                    return (
-                                        <Fragment key={department.id}>
-                                            <TR
-                                                className={cn(
-                                                    'cursor-pointer hover:bg-secondary/40 transition-colors',
-                                                    isExpanded && 'bg-secondary/20',
-                                                )}
-                                                onClick={() => toggleDept(department.id)}
-                                            >
-                                                <TD className="w-10 text-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleDept(department.id);
-                                                        }}
-                                                        className="grid h-7 w-7 place-items-center rounded text-muted-foreground hover:bg-secondary"
-                                                    >
-                                                        <ChevronDown
-                                                            className={cn(
-                                                                'h-4 w-4 transition-transform duration-200',
-                                                                isExpanded && 'rotate-180',
-                                                            )}
-                                                        />
-                                                    </button>
-                                                </TD>
-                                                <TD>
-                                                    <span className="font-mono text-xs font-bold text-primary">
-                                                        {department.code}
-                                                    </span>
-                                                </TD>
-                                                <TD>
-                                                    <p className="font-semibold text-foreground">
-                                                        {department.name}
+                                            {/* Assigned Staff Members */}
+                                            {holders.length > 0 && (
+                                                <div className="mt-3 flex-1 space-y-2">
+                                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                                        Assigned Employees ({holders.length})
                                                     </p>
-                                                    {department.description && (
-                                                        <p className="max-w-md truncate text-xs text-muted-foreground">
-                                                            {department.description}
-                                                        </p>
-                                                    )}
-                                                </TD>
-                                                <TD className="text-right font-mono font-medium">
-                                                    {department.positions_count}
-                                                </TD>
-                                                <TD className="text-right font-mono font-medium">
-                                                    {department.employees_count}
-                                                </TD>
-                                                <TD>
-                                                    <Badge variant={department.is_active ? 'success' : 'muted'}>
-                                                        {department.is_active ? 'Active' : 'Inactive'}
-                                                    </Badge>
-                                                </TD>
-                                                <TD className="text-right">
-                                                    <div
-                                                        className="flex items-center justify-end gap-2"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => openPosModal(department.id)}
-                                                            className="h-7 gap-1 text-xs"
-                                                        >
-                                                            <Plus className="h-3 w-3" />
-                                                            <span>Add Position</span>
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => toggleDept(department.id)}
-                                                            className="h-7 text-xs"
-                                                        >
-                                                            {isExpanded ? 'Collapse' : 'Explore'}
-                                                        </Button>
-                                                    </div>
-                                                </TD>
-                                            </TR>
+                                                    <div className="space-y-1.5">
+                                                        {holders.map((emp) => (
+                                                            <div
+                                                                key={emp.id}
+                                                                className="group flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors hover:border-primary/50 hover:bg-secondary/40"
+                                                            >
+                                                                <Link
+                                                                    href={`/hr/employees/${emp.id}`}
+                                                                    className="flex min-w-0 flex-1 items-center gap-2"
+                                                                    title={`View ${emp.full_name}'s profile`}
+                                                                >
+                                                                    {emp.photo_url ? (
+                                                                        <img
+                                                                            src={emp.photo_url}
+                                                                            alt=""
+                                                                            className="h-7 w-7 shrink-0 rounded-full object-cover"
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                                                                            {initials(
+                                                                                emp.full_name,
+                                                                            )}
+                                                                        </span>
+                                                                    )}
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="truncate text-xs font-medium text-foreground transition-colors group-hover:text-primary">
+                                                                            {emp.full_name}
+                                                                        </p>
+                                                                        <p className="truncate font-mono text-[10px] text-muted-foreground">
+                                                                            {
+                                                                                emp.employee_number
+                                                                            }
+                                                                        </p>
+                                                                    </div>
+                                                                </Link>
 
-                                            {/* Expanded Department Detail */}
-                                            {isExpanded && (
-                                                <TR className="bg-secondary/15 hover:bg-secondary/15">
-                                                    <TD colSpan={7} className="p-4 sm:p-5">
-                                                        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                                                            <div className="mb-4 flex items-center justify-between border-b border-border pb-2.5">
-                                                                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                                                                    Positions in {department.name} ({positions.length})
-                                                                </h4>
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
-                                                                    onClick={() => openPosModal(department.id)}
-                                                                    className="h-7 gap-1 text-xs text-primary"
+                                                                    onClick={() =>
+                                                                        proposeMove(emp, pos)
+                                                                    }
+                                                                    className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-primary"
+                                                                    title="Reassign to another position"
                                                                 >
-                                                                    <Plus className="h-3.5 w-3.5" />
-                                                                    <span>New Position</span>
+                                                                    <ArrowRightLeft className="mr-1 h-3 w-3" />
+                                                                    <span>Move</span>
                                                                 </Button>
                                                             </div>
-
-                                                            {positions.length === 0 ? (
-                                                                <p className="text-xs italic text-muted-foreground py-2">
-                                                                    No positions created for this department yet.
-                                                                </p>
-                                                            ) : (
-                                                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                                                    {positions.map((pos) => (
-                                                                        <div
-                                                                            key={pos.id}
-                                                                            className="rounded-lg border border-border bg-background p-3"
-                                                                        >
-                                                                            <div className="flex items-start justify-between gap-1">
-                                                                                <div>
-                                                                                    <p className="font-bold text-xs text-foreground">
-                                                                                        {pos.title}
-                                                                                    </p>
-                                                                                    <p className="font-mono text-[10px] text-muted-foreground">
-                                                                                        {pos.code} {pos.salary_grade && `· SG-${pos.salary_grade}`}
-                                                                                    </p>
-                                                                                </div>
-                                                                                <Badge variant="outline" className="text-[10px]">
-                                                                                    {pos.employees?.length ?? 0} staff
-                                                                                </Badge>
-                                                                            </div>
-
-                                                                            <div className="mt-2.5 space-y-1">
-                                                                                {(pos.employees ?? []).map((emp) => (
-                                                                                    <div
-                                                                                        key={emp.id}
-                                                                                        className="flex items-center justify-between gap-2 rounded bg-secondary/30 p-1.5"
-                                                                                    >
-                                                                                        <Link
-                                                                                            href={`/hr/employees/${emp.id}`}
-                                                                                            className="truncate text-xs font-medium text-foreground hover:text-primary transition-colors"
-                                                                                        >
-                                                                                            {emp.full_name}
-                                                                                        </Link>
-                                                                                        <Button
-                                                                                            variant="ghost"
-                                                                                            size="sm"
-                                                                                            onClick={() => proposeMove(emp, pos)}
-                                                                                            className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-primary"
-                                                                                        >
-                                                                                            Move
-                                                                                        </Button>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </TD>
-                                                </TR>
-                                            )}
-                                        </Fragment>
-                                    );
-                                })
-                            )}
-                        </TBody>
-                    </Table>
-                </Card>
-            )}
-
-            {/* VIEW MODE 3: POSITIONS & BANDS REGISTRY */}
-            {viewMode === 'positions' && (
-                <Card>
-                    <CardHeader
-                        title="Position Registry & Salary Bands"
-                        description="All job titles across departments, salary bands, and assigned holders."
-                        action={
-                            <Button onClick={() => openPosModal()}>
-                                <Plus className="h-4 w-4" />
-                                New Position
-                            </Button>
-                        }
-                    />
-
-                    <div className="p-4 space-y-3">
-                        {filteredDepartments.map((dept) => {
-                            const positions = dept.positions ?? [];
-                            if (positions.length === 0) return null;
-
-                            return (
-                                <div key={dept.id} className="rounded-xl border border-border bg-card p-4">
-                                    <div className="mb-3 flex items-center justify-between border-b border-border pb-2">
-                                        <div className="flex items-center gap-2">
-                                            <Building2 className="h-4 w-4 text-primary" />
-                                            <h3 className="font-bold text-sm text-foreground">{dept.name}</h3>
-                                            <Badge variant="outline" className="font-mono text-[10px]">
-                                                {dept.code}
-                                            </Badge>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => openPosModal(dept.id)}
-                                            className="h-6 text-xs text-primary"
-                                        >
-                                            <Plus className="mr-1 h-3 w-3" /> Add Position
-                                        </Button>
-                                    </div>
-
-                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                        {positions.map((pos) => {
-                                            const holders = pos.employees ?? [];
-
-                                            return (
-                                                <div
-                                                    key={pos.id}
-                                                    className="rounded-lg border border-border bg-background p-3 shadow-xs"
-                                                >
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div>
-                                                            <h4 className="text-xs font-bold text-foreground">
-                                                                {pos.title}
-                                                            </h4>
-                                                            <p className="font-mono text-[10px] text-muted-foreground">
-                                                                {pos.code} {pos.salary_grade && `· SG-${pos.salary_grade}`}
-                                                            </p>
-                                                        </div>
-                                                        <Badge variant={holders.length > 0 ? 'secondary' : 'muted'} className="text-[10px]">
-                                                            {holders.length} staff
-                                                        </Badge>
-                                                    </div>
-
-                                                    <div className="mt-2 text-[11px] text-muted-foreground">
-                                                        Salary Band: <SalaryBandBadge min={pos.min_salary} max={pos.max_salary} />
-                                                    </div>
-
-                                                    <div className="mt-2.5 border-t border-border/50 pt-2 space-y-1">
-                                                        {holders.length === 0 ? (
-                                                            <p className="text-[10px] italic text-muted-foreground">
-                                                                No staff assigned.
-                                                            </p>
-                                                        ) : (
-                                                            holders.map((emp) => (
-                                                                <div
-                                                                    key={emp.id}
-                                                                    className="flex items-center justify-between gap-1 text-xs"
-                                                                >
-                                                                    <Link
-                                                                        href={`/hr/employees/${emp.id}`}
-                                                                        className="truncate font-medium text-foreground hover:text-primary transition-colors"
-                                                                    >
-                                                                        {emp.full_name}
-                                                                    </Link>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => proposeMove(emp, pos)}
-                                                                        className="text-[10px] font-semibold text-primary hover:underline"
-                                                                    >
-                                                                        Move
-                                                                    </button>
-                                                                </div>
-                                                            ))
-                                                        )}
+                                                        ))}
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            )}
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Unassigned Staff */}
+                        {selectedUnassigned.length > 0 && (
+                            <div className="rounded-xl border border-amber-300 bg-amber-50/50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+                                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                                    Unassigned Employees in {selectedDept.name} (
+                                    {selectedUnassigned.length}):
+                                </p>
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {selectedUnassigned.map((emp) => (
+                                        <div
+                                            key={emp.id}
+                                            className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-background p-2 dark:border-amber-900/40"
+                                        >
+                                            <Link
+                                                href={`/hr/employees/${emp.id}`}
+                                                className="truncate text-xs font-medium text-foreground hover:text-primary"
+                                            >
+                                                {emp.full_name} ({emp.employee_number})
+                                            </Link>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() =>
+                                                    proposeMove(emp, {
+                                                        id: null,
+                                                        title: 'Unassigned',
+                                                    })
+                                                }
+                                                className="h-6 px-2 text-[11px] text-primary"
+                                            >
+                                                Assign
+                                            </Button>
+                                        </div>
+                                    ))}
                                 </div>
+                            </div>
+                        )}
+                    </div>
+                ) : /* VIEW: ALL DEPARTMENTS CARDS */
+                filteredDepartments.length === 0 ? (
+                    <Card>
+                        <CardBody className="py-12 text-center">
+                            <p className="text-sm font-medium text-foreground">
+                                No organization records match &ldquo;{searchQuery}&rdquo;
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Try clearing your search or adding a new department.
+                            </p>
+                        </CardBody>
+                    </Card>
+                ) : (
+                    /*
+                        Built from the shared `Card` rather than a hand-rolled
+                        div, so the radius, border, surface and shadow are the
+                        dashboard's **by construction** rather than by copying
+                        class strings that then drift. `floating` is the same
+                        flag every dashboard tile passes.
+
+                        The type scale is the dashboard's too, taken from
+                        `StatCard`: an 11px uppercase tracked label in muted
+                        (there, the metric's name; here, the department code),
+                        a `font-semibold` headline in the foreground colour,
+                        and `text-xs` muted for the figures underneath. What
+                        was here instead was a 5px-larger padding, a
+                        `rounded-xl` icon tile two sizes up, `font-bold` where
+                        the house uses semibold, and the code in a monospace
+                        outline badge — six small departures that add up to a
+                        screen that reads as though it came from somewhere
+                        else.
+                    */
+                    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                        {filteredDepartments.map((dept) => {
+                            const positions = dept.positions ?? [];
+                            const open = () => setSelectedDeptId(dept.id);
+
+                            return (
+                                <Card
+                                    key={dept.id}
+                                    floating
+                                    onClick={open}
+                                    /*
+                                        `role`, `tabIndex` and the key handler
+                                        are a fix rather than decoration: this
+                                        was a `<div onClick>`, which no
+                                        keyboard can reach and no screen reader
+                                        announces as something you can press.
+                                        `Card`'s own focus ring and hover lift
+                                        are gated on `href`, and this card
+                                        changes local state rather than
+                                        navigating — so those classes are
+                                        mirrored here from its `href &&
+                                        floating` branch, deliberately the same
+                                        values rather than near ones.
+                                    */
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            open();
+                                        }
+                                    }}
+                                    className="group flex cursor-pointer flex-col justify-between p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_18px_30px_-12px_hsl(var(--foreground)/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                                >
+                                    <div>
+                                        <div className="flex items-start justify-between gap-3">
+                                            {/* The code, in the dashboard's
+                                                label treatment — it names the
+                                                thing rather than being a
+                                                figure, which is what that
+                                                11px uppercase line is for. */}
+                                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                {dept.code}
+                                            </p>
+                                            {/* 9x9 and `rounded-lg`, the size
+                                                and radius every StatCard icon
+                                                tile uses, with `ICON_TONES.primary`'s
+                                                own values — that map is not
+                                                exported, so the pair is
+                                                written out rather than
+                                                guessed at. */}
+                                            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                                                <Building2
+                                                    className="h-[18px] w-[18px]"
+                                                    aria-hidden="true"
+                                                />
+                                            </span>
+                                        </div>
+
+                                        <h3 className="mt-2 text-base font-semibold leading-tight text-foreground">
+                                            {dept.name}
+                                        </h3>
+                                    </div>
+
+                                    <div className="mt-4 flex items-center justify-between gap-3">
+                                        <p className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <Users
+                                                    className="h-3.5 w-3.5"
+                                                    aria-hidden="true"
+                                                />
+                                                {dept.employees_count} staff
+                                            </span>
+                                            <span aria-hidden="true">&bull;</span>
+                                            <span className="flex items-center gap-1">
+                                                <Briefcase
+                                                    className="h-3.5 w-3.5"
+                                                    aria-hidden="true"
+                                                />
+                                                {positions.length} positions
+                                            </span>
+                                        </p>
+
+                                        <span className="flex shrink-0 items-center text-xs font-semibold text-primary">
+                                            Positions
+                                            <ArrowRight
+                                                className="ml-1 h-3.5 w-3.5"
+                                                aria-hidden="true"
+                                            />
+                                        </span>
+                                    </div>
+                                </Card>
                             );
                         })}
                     </div>
-                </Card>
-            )}
+                )}
+            </div>
 
             {/* MODAL 1: NEW DEPARTMENT */}
             <Modal
@@ -923,13 +676,20 @@ export default function Departments({
                     <Field label="Code" required error={deptForm.errors.code}>
                         <Input
                             value={deptForm.data.code}
-                            onChange={(e) => deptForm.setData('code', e.target.value.toUpperCase())}
+                            onChange={(e) =>
+                                deptForm.setData('code', e.target.value.toUpperCase())
+                            }
                             placeholder="OPS"
-                            className="uppercase font-mono"
+                            className="font-mono uppercase"
                         />
                     </Field>
 
-                    <Field label="Name" required error={deptForm.errors.name} className="sm:col-span-2">
+                    <Field
+                        label="Name"
+                        required
+                        error={deptForm.errors.name}
+                        className="sm:col-span-2"
+                    >
                         <Input
                             value={deptForm.data.name}
                             onChange={(e) => deptForm.setData('name', e.target.value)}
@@ -937,7 +697,11 @@ export default function Departments({
                         />
                     </Field>
 
-                    <Field label="Description" error={deptForm.errors.description} className="sm:col-span-3">
+                    <Field
+                        label="Description"
+                        error={deptForm.errors.description}
+                        className="sm:col-span-3"
+                    >
                         <Textarea
                             rows={2}
                             value={deptForm.data.description}
@@ -978,7 +742,12 @@ export default function Departments({
                 }
             >
                 <form onSubmit={submitPos} className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Department" required error={posForm.errors.department_id} className="sm:col-span-2">
+                    <Field
+                        label="Department"
+                        required
+                        error={posForm.errors.department_id}
+                        className="sm:col-span-2"
+                    >
                         <Select
                             value={posForm.data.department_id}
                             onChange={(e) => posForm.setData('department_id', e.target.value)}
@@ -992,9 +761,11 @@ export default function Departments({
                     <Field label="Code" required error={posForm.errors.code}>
                         <Input
                             value={posForm.data.code}
-                            onChange={(e) => posForm.setData('code', e.target.value.toUpperCase())}
+                            onChange={(e) =>
+                                posForm.setData('code', e.target.value.toUpperCase())
+                            }
                             placeholder="OPS-DRV"
-                            className="uppercase font-mono"
+                            className="font-mono uppercase"
                         />
                     </Field>
 
@@ -1107,7 +878,7 @@ export default function Departments({
                         </div>
                     )}
 
-                    <div className="max-h-60 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                    <div className="max-h-60 divide-y divide-border overflow-y-auto rounded-lg border border-border">
                         {destinations.length === 0 ? (
                             <p className="p-4 text-center text-xs text-muted-foreground">
                                 No positions found matching your search.
@@ -1122,28 +893,26 @@ export default function Departments({
                                         type="button"
                                         onClick={() => pickMoveTarget(dest)}
                                         className={cn(
-                                            'w-full flex items-center justify-between p-3 text-left text-xs transition-colors',
+                                            'flex w-full items-center justify-between p-3 text-left text-xs transition-colors',
                                             isSelected
-                                                ? 'bg-primary/10 text-primary font-medium'
-                                                : 'hover:bg-secondary/50 text-foreground',
+                                                ? 'bg-primary/10 font-medium text-primary'
+                                                : 'text-foreground hover:bg-secondary/50',
                                         )}
                                     >
                                         <div>
                                             <p className="font-semibold">{dest.title}</p>
-                                            <p className="text-muted-foreground font-mono text-[10.5px]">
+                                            <p className="font-mono text-[10.5px] text-muted-foreground">
                                                 {dest.code} &bull; {dest.department}
                                             </p>
                                         </div>
-                                        {isSelected && <Check className="h-4 w-4 text-primary" />}
+                                        {isSelected && (
+                                            <Check className="h-4 w-4 text-primary" />
+                                        )}
                                     </button>
                                 );
                             })
                         )}
                     </div>
-
-                    <p className="text-[11px] text-muted-foreground italic">
-                        Note: Reassignment updates the employee&rsquo;s official position and department. Base pay remains unchanged until adjusted in Compensation.
-                    </p>
                 </div>
             </Modal>
         </AppLayout>

@@ -98,10 +98,31 @@ class ResetDemoData extends Command
 
     public function handle(): int
     {
-        $admin = User::where('role', User::ROLE_ADMIN)->orderBy('id')->first();
+        /*
+         * The one login that survives, and it has to be found by *authority*
+         * rather than by one role name.
+         *
+         * This looked for `ROLE_ADMIN` alone, which was the whole set of
+         * administrators when it was written. `super_admin` was added
+         * afterwards and the seeded `admin@primepower.com` was promoted into
+         * it — so on the real database there was no `admin` row left at all,
+         * this guard fired, and the command refused to run on a system that
+         * had an administrator the whole time. The guard was right in
+         * substance (never leave a database nobody can sign in to) and wrong
+         * in fact, which is the more dangerous of the two: a refusal nobody
+         * can explain is one somebody works around with `migrate:fresh`.
+         *
+         * Super administrator first, because when both exist it is the higher
+         * authority and the account that must not be the one deleted.
+         */
+        $admin = User::query()
+            ->whereIn('role', [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN])
+            ->orderByRaw('CASE WHEN role = ? THEN 0 ELSE 1 END', [User::ROLE_SUPER_ADMIN])
+            ->orderBy('id')
+            ->first();
 
         if (! $admin) {
-            $this->error('No administrator account — refusing to run, because nothing would be left to sign in with.');
+            $this->error('No administrator or super administrator account — refusing to run, because nothing would be left to sign in with.');
 
             return self::FAILURE;
         }

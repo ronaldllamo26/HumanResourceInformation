@@ -101,14 +101,20 @@ export const SETTINGS_SECTIONS = [
  * door that vanishes once you walk through it.
  */
 export function visibleSections(role) {
+    const isSuperAdmin = role === 'super_admin';
+    const isAdmin = isSuperAdmin || role === 'admin';
+
     return SETTINGS_SECTIONS.filter((section) => {
+        if (isSuperAdmin) return true;
+
         // `roles` where `admin: true` cannot say it — Audit Logs is HR's as
         // well, because `viewAuditLog` is `isHrAdmin()`.
         if (section.roles) {
+            if (section.roles.includes('admin') && isAdmin) return true;
             return section.roles.includes(role);
         }
 
-        return !section.admin || role === 'admin';
+        return !section.admin || isAdmin;
     });
 }
 

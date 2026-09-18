@@ -67,28 +67,24 @@ export default function Workforce({
                 <StatTile
                     label="Active Headcount"
                     value={summary.active_count}
-                    hint={`${summary.external_count} deployed · ${summary.internal_count} in-house`}
                     icon={Users}
                     tone="text-primary"
                 />
                 <StatTile
                     label="Turnover Rate (YTD)"
                     value={`${summary.turnover_rate}%`}
-                    hint={`${summary.separated_ytd} exits against total active workforce`}
                     icon={summary.turnover_rate > 15 ? TrendingDown : TrendingUp}
                     tone={summary.turnover_rate > 15 ? 'text-warning' : 'text-success'}
                 />
                 <StatTile
                     label="New Hires (YTD)"
                     value={summary.joined_ytd}
-                    hint={`${summary.joined_ytd - summary.separated_ytd >= 0 ? '+' : ''}${summary.joined_ytd - summary.separated_ytd} net workforce change`}
                     icon={UserPlus}
                     tone="text-info"
                 />
                 <StatTile
                     label="Average Tenure"
                     value={`${summary.avg_tenure_months} mos`}
-                    hint="Average retention duration of active staff"
                     icon={Clock}
                 />
             </div>

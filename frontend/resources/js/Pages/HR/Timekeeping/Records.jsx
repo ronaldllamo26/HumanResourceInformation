@@ -111,7 +111,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
     const rows = logs.data ?? [];
     const colSpan = 8;
 
-
     return (
         <AppLayout
             title="Daily Time Records"
@@ -123,14 +122,12 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                     value={summary.worked}
                     icon={UserCheck}
                     tone={summary.worked > 0 ? 'success' : 'muted'}
-                    hint={`${summary.hours} hours on the job`}
                 />
                 <StatCard
                     label="Late days"
                     value={summary.late}
                     icon={AlarmClock}
                     tone={summary.late > 0 ? 'warning' : 'muted'}
-                    hint="past the grace period"
                     href={withFilters('/hr/timekeeping', filters, { status: 'late' })}
                 />
                 <StatCard
@@ -138,7 +135,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                     value={summary.absent}
                     icon={CalendarX}
                     tone={summary.absent > 0 ? 'destructive' : 'muted'}
-                    hint="working days with no punch"
                     href={withFilters('/hr/timekeeping', filters, { status: 'absent' })}
                 />
                 <StatCard
@@ -146,7 +142,6 @@ export default function Records({ logs, filters, summary, statuses, employees, c
                     value={summary.incomplete}
                     icon={CircleAlert}
                     tone={summary.incomplete > 0 ? 'destructive' : 'muted'}
-                    hint="blocks payroll until fixed"
                     href={withFilters('/hr/timekeeping', filters, { status: 'incomplete' })}
                 />
             </div>

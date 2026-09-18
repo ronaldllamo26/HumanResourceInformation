@@ -14,7 +14,7 @@
  * absence, and the type should say so.
  */
 
-export type Role = 'admin' | 'hr_staff' | 'supervisor' | 'employee';
+export type Role = 'super_admin' | 'admin' | 'hr_staff' | 'supervisor' | 'employee';
 
 export type EmploymentCategory = 'internal' | 'external';
 

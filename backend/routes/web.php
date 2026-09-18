@@ -35,8 +35,10 @@ use App\Http\Controllers\ScanAccuracyController;
 use App\Http\Controllers\SeparationController;
 use App\Http\Controllers\Settings\AuditLogController;
 use App\Http\Controllers\Settings\DataExportController;
+use App\Http\Controllers\Settings\ImpersonationController;
 use App\Http\Controllers\Settings\IntegrationController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\SessionController;
 use App\Http\Controllers\Settings\SettingsController;
 use App\Http\Controllers\Settings\UserAccessController;
 use App\Http\Controllers\ThirteenthMonthController;
@@ -237,6 +239,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('archive', [ArchiveController::class, 'index'])->name('archive');
         Route::post('archive/employees/{employee}/restore', [ArchiveController::class, 'restoreEmployee'])
             ->name('archive.employees.restore');
+        Route::post('archive/users/{user}/restore', [ArchiveController::class, 'restoreUser'])
+            ->name('archive.users.restore');
         Route::post('archive/clients/{client}/restore', [ArchiveController::class, 'restoreClient'])
             ->name('archive.clients.restore');
 
@@ -365,10 +369,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Module 4 — Payroll & Compensation
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll');
         Route::post('payroll/periods', [PayrollController::class, 'storePeriod'])->name('payroll.periods.store');
+        Route::delete('payroll/periods/{payrollPeriod}', [PayrollController::class, 'destroyPeriod'])
+            ->name('payroll.periods.destroy');
         Route::post('payroll/periods/{payrollPeriod}/generate', [PayrollController::class, 'generate'])
             ->name('payroll.generate');
 
         Route::get('payroll/runs/{payrollRun}', [PayrollController::class, 'show'])->name('payroll.run');
+        Route::delete('payroll/runs/{payrollRun}', [PayrollController::class, 'destroyRun'])
+            ->name('payroll.run.destroy');
         Route::post('payroll/runs/{payrollRun}/submit', [PayrollController::class, 'submit'])->name('payroll.submit');
         Route::post('payroll/runs/{payrollRun}/approve', [PayrollController::class, 'approve'])->name('payroll.approve');
         Route::post('payroll/runs/{payrollRun}/paid', [PayrollController::class, 'markPaid'])->name('payroll.paid');
@@ -494,7 +502,10 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
     Route::put('users/{user}/profile', [UserAccessController::class, 'updateProfile'])->name('users.profile');
     Route::put('users/{user}/role', [UserAccessController::class, 'updateRole'])->name('users.role');
     Route::post('users/{user}/toggle', [UserAccessController::class, 'toggleActive'])->name('users.toggle');
+    Route::delete('users/{user}', [UserAccessController::class, 'destroy'])->name('users.destroy');
     Route::post('users/{user}/reset-password', [UserAccessController::class, 'resetPassword'])->name('users.reset');
+    Route::post('users/requests/{accountChangeRequest}/approve', [UserAccessController::class, 'approveChangeRequest'])->name('users.requests.approve');
+    Route::post('users/requests/{accountChangeRequest}/reject', [UserAccessController::class, 'rejectChangeRequest'])->name('users.requests.reject');
     /*
      * A real code to the connected inbox, now — the only way to find a typo
      * in the address or a broken mailer before somebody cannot sign in.
@@ -503,7 +514,31 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
         ->middleware('throttle:6,1')
         ->name('users.otpTest');
 
+    /*
+     * Impersonation — super administrator only, and never against a peer.
+     *
+     * `stop` sits outside the gate deliberately: the session pressing it is
+     * authenticated as the impersonated employee, who does not hold
+     * `impersonate`, so asking the policy there would trap the administrator
+     * inside the session they are trying to leave. The session's own recorded
+     * administrator is the authority, and only a request that already passed
+     * the gate could have put it there.
+     */
+    Route::post('users/{user}/impersonate', [ImpersonationController::class, 'store'])->name('impersonate.start');
+    Route::post('impersonate/stop', [ImpersonationController::class, 'destroy'])->name('impersonate.stop');
+
+    /*
+     * Active sessions — the incident screen. The five-minute idle window
+     * closes an abandoned desk; this answers a password known to have leaked,
+     * which waiting five minutes is not a response to.
+     */
+    Route::get('sessions', [SessionController::class, 'index'])->name('sessions');
+    Route::delete('sessions/user/{user}', [SessionController::class, 'destroy'])->name('sessions.user');
+    Route::delete('sessions/one', [SessionController::class, 'destroySession'])->name('sessions.one');
+    Route::delete('sessions/all', [SessionController::class, 'destroyAll'])->name('sessions.all');
+
     Route::get('security', [SecurityController::class, 'index'])->name('security');
+    Route::post('security/change-request', [SecurityController::class, 'storeChangeRequest'])->name('security.changeRequest');
     Route::put('security/profile', [SecurityController::class, 'updateProfile'])->name('security.profile');
     Route::put('security/password', [SecurityController::class, 'updatePassword'])->name('security.password');
     Route::put('security/otp', [SecurityController::class, 'updateOtpEmail'])->name('security.otp');
@@ -527,6 +562,23 @@ Route::middleware(['auth', 'verified'])->prefix('settings')->name('settings.')->
     Route::get('data', [SettingsController::class, 'data'])->name('data');
     Route::put('data', [SettingsController::class, 'updateData'])->name('data.update');
     Route::get('data/export/employees', [DataExportController::class, 'employees'])->name('data.export.employees');
+
+    /*
+     * The whole database as one file.
+     *
+     * GET, like `audit-logs/export` beside it, because the response is a file
+     * and a browser has to navigate to it — an Inertia POST would hand the
+     * binary to the page renderer instead of the download manager. A POST was
+     * the first shape and was wrong for that reason, not for a security one.
+     *
+     * **Throttled hard**, which is what a POST would otherwise have bought:
+     * this spends up to five minutes of server time producing every record in
+     * the company, and two administrators pressing it at once is two
+     * concurrent dumps of the same database.
+     */
+    Route::get('data/backup', [SettingsController::class, 'backup'])
+        ->middleware('throttle:3,1')
+        ->name('data.backup');
 
     Route::get('integrations', [IntegrationController::class, 'index'])->name('integrations');
     Route::post('integrations/tokens', [IntegrationController::class, 'storeToken'])->name('integrations.tokens.store');

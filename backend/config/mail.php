@@ -63,7 +63,14 @@ return [
         ],
 
         'resend' => [
-            'transport' => 'resend',
+            'transport' => 'smtp',
+            'host' => env('RESEND_HOST', 'smtp.resend.com'),
+            'port' => env('RESEND_PORT', 465),
+            'encryption' => env('RESEND_ENCRYPTION', 'ssl'),
+            'username' => env('RESEND_USERNAME', 'resend'),
+            'password' => env('RESEND_API_KEY'),
+            'timeout' => null,
+            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
         'sendmail' => [
@@ -112,8 +119,8 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env('MAIL_FROM_ADDRESS', 'onboarding@resend.dev'),
+        'name' => env('MAIL_FROM_NAME', 'PrimePower Manpower HRIS'),
     ],
 
 ];

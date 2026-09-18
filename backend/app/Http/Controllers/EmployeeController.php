@@ -129,10 +129,20 @@ class EmployeeController extends Controller
          * the form asks for the reason instead and `store()` records it.
          */
         if (! $request->filled('endorsement')) {
+            $prefill = [];
+            if ($request->filled('client_id')) {
+                $prefill['client_id'] = (string) $request->input('client_id');
+                $prefill['employment_category'] = Employee::CATEGORY_EXTERNAL;
+                $client = Client::find($request->input('client_id'));
+                if ($client?->wage_region) {
+                    $prefill['wage_region'] = $client->wage_region;
+                }
+            }
+
             return Inertia::render('HR/Employees/Create', [
                 'options' => $this->formOptions(),
                 'endorsement' => null,
-                'prefill' => [],
+                'prefill' => $prefill,
                 'can' => ['scanForm' => app(DocumentScanner::class)->isEnabled()],
             ]);
         }
@@ -229,7 +239,28 @@ class EmployeeController extends Controller
      */
     public function myProfile(Request $request): Response|RedirectResponse
     {
-        $employee = $request->user()?->employee;
+        $user = $request->user();
+        $employee = $user?->employee;
+
+        if (! $employee && $user) {
+            $emails = array_values(array_filter([
+                $user->email,
+                $user->otp_email,
+                $user->username,
+            ]));
+
+            $matchedEmployee = null;
+            if (! empty($emails)) {
+                $matchedEmployee = Employee::whereNull('user_id')
+                    ->whereIn('email', $emails)
+                    ->first();
+            }
+
+            if ($matchedEmployee) {
+                $matchedEmployee->update(['user_id' => $user->id]);
+                $employee = $matchedEmployee;
+            }
+        }
 
         if (! $employee) {
             return redirect()
@@ -741,13 +772,19 @@ class EmployeeController extends Controller
              * Nullable is a real choice here — it is how somebody is brought
              * back in-house — but `exists` alone would not do: a deactivated
              * client is kept so payroll and attendance keep what they were
-             * filed under, not so somebody new can be sent there. The same
-             * rule the position move applies.
+             * filed under, not so somebody new can be sent there.
              */
             'client_id' => [
                 'nullable',
                 Rule::exists('clients', 'id')->where('is_active', true),
             ],
+            'position_id' => ['nullable', 'exists:positions,id'],
+            'employment_status' => ['nullable', Rule::in(Employee::EMPLOYMENT_STATUSES)],
+            'contract_start' => ['nullable', 'date'],
+            'contract_end' => ['nullable', 'date'],
+            'basic_salary' => ['nullable', 'numeric', 'min:0'],
+            'wage_region' => ['nullable', Rule::in(array_keys(config('payroll.wage_regions')))],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ], [
             'client_id.exists' => 'That client is not one somebody can be deployed to.',
         ]);
@@ -755,26 +792,47 @@ class EmployeeController extends Controller
         $client = $validated['client_id'] ? Client::findOrFail($validated['client_id']) : null;
         $from = $employee->client?->name ?? 'internal staff';
 
-        $employee->update([
+        $updates = [
             'client_id' => $client?->id,
             'employment_category' => $client
                 ? Employee::CATEGORY_EXTERNAL
                 : Employee::CATEGORY_INTERNAL,
-        ]);
+        ];
 
-        /*
-         * The consequence is stated rather than left to be discovered.
-         * Deployment is a single `client_id` with no history, so a move
-         * rewrites which client *past* payslips are grouped under — a
-         * deliberate limit for a workforce that does not move often, and one
-         * the person clicking is entitled to know about before the next
-         * billing run disagrees with the last one.
-         */
+        if (array_key_exists('position_id', $validated) && $validated['position_id']) {
+            $updates['position_id'] = $validated['position_id'];
+        }
+
+        if (array_key_exists('employment_status', $validated) && $validated['employment_status']) {
+            $updates['employment_status'] = $validated['employment_status'];
+        }
+
+        if (array_key_exists('contract_start', $validated)) {
+            $updates['contract_start'] = $validated['contract_start'];
+        }
+
+        if (array_key_exists('contract_end', $validated)) {
+            $updates['contract_end'] = $validated['contract_end'];
+        }
+
+        if (array_key_exists('basic_salary', $validated) && $validated['basic_salary'] !== null) {
+            $updates['basic_salary'] = $validated['basic_salary'];
+        }
+
+        if (array_key_exists('wage_region', $validated)) {
+            $updates['wage_region'] = $validated['wage_region'] ?: ($client?->wage_region ?? null);
+        }
+
+        if (array_key_exists('notes', $validated) && $validated['notes'] !== null) {
+            $updates['notes'] = $validated['notes'];
+        }
+
+        $employee->update($updates);
+
         return back()->with(
             'success',
             $client
-                ? "{$employee->full_name} moved from {$from} to {$client->name}. "
-                    .'Past payslips regroup under the new client — deployment is not dated.'
+                ? "{$employee->full_name} deployed to {$client->name} with contract and salary rate recorded."
                 : "{$employee->full_name} brought in-house from {$from}, and is now internal staff.",
         );
     }
@@ -783,20 +841,24 @@ class EmployeeController extends Controller
      * Somebody added without a Core 1 endorsement.
      *
      * Allowed, because not every hire comes through recruitment — a
-     * transferee, a rehire, an urgent replacement. What an endorsement would
-     * have recorded (that someone decided, who, and why) is recorded here
-     * instead: the reason is required, and it is written to the audit log
-     * beside the created record, where it can be found later.
+     * transferee, a rehire, an urgent replacement.
+     *
+     * **The typed reason is gone, removed on the owner's instruction, and
+     * what that costs is worth stating rather than quietly dropping.** An
+     * endorsement records three things: that somebody decided, who they were,
+     * and why. The `direct_hire` row below still carries the first two — it
+     * names the person who added the employee, the employee added, the
+     * address and the time — so the act is not invisible. What is no longer
+     * captured is the *why*: a rehire, a transfer and an urgent replacement
+     * now look identical in the trail, and anybody asking six months later
+     * why this employee never went through recruitment has nothing on the
+     * record to read. That is a real gap and it is the owner's call to accept
+     * it; the row stays because "added directly, by whom" is a different and
+     * cheaper fact than the explanation, and losing both was not what was
+     * asked for.
      */
     private function storeDirectHire(StoreEmployeeRequest $request): RedirectResponse
     {
-        $reason = $request->validate([
-            'direct_hire_reason' => ['required', 'string', 'min:10', 'max:500'],
-        ], [
-            'direct_hire_reason.required' => 'Say why this employee is added directly instead of through a Core 1 endorsement.',
-            'direct_hire_reason.min' => 'Give a little more detail — at least 10 characters.',
-        ])['direct_hire_reason'];
-
         $employee = $this->employees->create($request->validated(), $request->file('photo'));
 
         AuditLog::create([
@@ -804,7 +866,7 @@ class EmployeeController extends Controller
             'auditable_type' => Employee::class,
             'auditable_id' => $employee->id,
             'event' => 'direct_hire',
-            'new_values' => ['reason' => $reason, 'employee' => $employee->full_name],
+            'new_values' => ['employee' => $employee->full_name],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);

@@ -92,7 +92,6 @@ export default function AuditLogs({ entries, filters, summary, options, retentio
                     value={summary.total}
                     icon={ScrollText}
                     tone={summary.total > 0 ? 'primary' : 'muted'}
-                    hint="every source, not just the filter"
                 />
                 <StatCard
                     label="Sign-ins"
@@ -109,7 +108,6 @@ export default function AuditLogs({ entries, filters, summary, options, retentio
                     value={summary.failed}
                     icon={TriangleAlert}
                     tone={summary.failed > 0 ? 'destructive' : 'muted'}
-                    hint="wrong password, or a guessed username"
                     href={withFilters('/settings/audit-logs', filters, {
                         group: 'auth',
                         event: 'login_failed',
@@ -120,7 +118,6 @@ export default function AuditLogs({ entries, filters, summary, options, retentio
                     value={summary.reads}
                     icon={Eye}
                     tone={summary.reads > 0 ? 'info' : 'muted'}
-                    hint="201 files opened, files downloaded"
                     href={withFilters('/settings/audit-logs', filters, {
                         group: 'reads',
                         event: undefined,

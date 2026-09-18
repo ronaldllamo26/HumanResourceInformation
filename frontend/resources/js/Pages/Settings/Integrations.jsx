@@ -153,12 +153,6 @@ export default function Integrations({ tokens, endpoints, biometric }) {
                             </div>
                         </div>
                     </div>
-
-                    <p className="text-xs text-muted-foreground">
-                        Either route runs each row through the same service as a hand-keyed
-                        entry, so an imported day is computed identically. A malformed row is
-                        reported rather than aborting the batch.
-                    </p>
                 </CardBody>
             </Card>
 
@@ -208,10 +202,6 @@ export default function Integrations({ tokens, endpoints, biometric }) {
                             />
                         )}
                     </Field>
-
-                    <p className="text-xs text-muted-foreground">
-                        The token inherits your role, so it can reach exactly what you can.
-                    </p>
 
                     <div className="flex justify-end gap-2">
                         <Button variant="outline" onClick={() => setCreateOpen(false)}>

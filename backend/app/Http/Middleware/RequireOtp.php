@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ImpersonationService;
 use App\Services\OtpService;
 use Closure;
 use Illuminate\Http\Request;
@@ -45,6 +46,23 @@ class RequireOtp
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
+
+        /*
+         * An impersonated session is not asked for the employee's code, and
+         * skipping it is the honest thing rather than a convenience.
+         *
+         * The code goes to `users.otp_email` — the employee's own personal
+         * inbox — which the administrator cannot read and must not be handed.
+         * Asked for it, an impersonation would dead-end on the code screen
+         * while a login alert landed in the employee's Gmail for a sign-in
+         * they did not make. The factor is not being bypassed either: the
+         * administrator already answered *their own* code to reach the button,
+         * and `audit_logs.impersonated_by` carries who that was on every row
+         * the session goes on to write.
+         */
+        if (session(ImpersonationService::SESSION_KEY) !== null) {
+            return $next($request);
+        }
 
         if (! $this->otp->isRequiredFor($user) || $request->routeIs(self::ALLOWED)) {
             return $next($request);

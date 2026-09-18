@@ -1,4 +1,5 @@
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import {
     BellRing,
     Building2,
@@ -8,7 +9,12 @@ import {
     ClipboardCheck,
     ClipboardList,
     IdCard,
+    RefreshCw,
     Shield,
+    // The icon the sidebar already carries for Scanner Accuracy. A screen
+    // wearing two different icons in two places is two things to learn about
+    // one screen.
+    Target,
     UserPlus,
     Users,
     Wallet,
@@ -27,6 +33,24 @@ import {
     TrendChart,
 } from '@/Components/ui';
 import { cn, formatCurrency, formatDate, initials } from '@/lib/utils';
+
+/**
+ * What a scan's outcome means, as a colour.
+ *
+ * `corrected` is amber rather than red: a person fixing a reading is the
+ * feature working as designed — HR confirms every single-document upload — so
+ * it is something to watch, not a fault. `abandoned` is the red one, because a
+ * scan somebody walked away from is usually a reading bad enough to start over
+ * and it is the only outcome where nothing was filed at all.
+ *
+ * Not `Badge status=`, which maps employment statuses — these three are not in
+ * that vocabulary and would all fall through to `default`.
+ */
+const SCAN_OUTCOME_TONES = {
+    clean: 'success',
+    corrected: 'warning',
+    abandoned: 'destructive',
+};
 
 /** Fixed order, never cycled — the set is only validated for four slots. */
 const SERIES = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4'];
@@ -221,6 +245,7 @@ export default function Dashboard({
     leaveSummary,
     payrollSummary,
     onboardingSummary,
+    scannerSummary,
     profile,
     can,
 }) {
@@ -244,12 +269,104 @@ export default function Dashboard({
     const leaveFiled = ({ status }) =>
         `/hr/leave?status=${status}&filed_from=${leaveSummary.filed_from}`;
 
-    // Company-wide summaries arrive as null for a role that may not read them,
-    // so the card is never drawn empty — it is simply not there.
-    const companyCards = [leaveSummary, payrollSummary].filter(Boolean).length;
+    /*
+     * Company-wide summaries arrive as null for a role that may not read them,
+     * so the card is never drawn empty — it is simply not there.
+     *
+     * The column count follows the number that survived, because a fixed
+     * `lg:grid-cols-3` holding four cards leaves the fourth alone on a row of
+     * its own, and holding two stretches each across half a screen of
+     * whitespace. 201 File Health is the one card every role gets, so it is
+     * counted as a constant rather than tested.
+     */
+    const summaryCards =
+        [leaveSummary, payrollSummary, scannerSummary].filter(Boolean).length + 1;
+
+    const summaryColumns =
+        {
+            1: 'lg:grid-cols-1',
+            2: 'lg:grid-cols-2',
+            3: 'lg:grid-cols-3',
+            // Two-by-two on a laptop rather than four in a row: a quarter of
+            // 1280px is 300px, and three tiles plus a preview line do not read
+            // in that.
+            4: 'lg:grid-cols-2 2xl:grid-cols-4',
+        }[summaryCards] ?? 'lg:grid-cols-3';
+
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [liveEnabled, setLiveEnabled] = useState(true);
+
+    useEffect(() => {
+        if (!liveEnabled) return;
+
+        const interval = setInterval(() => {
+            setIsRefreshing(true);
+            router.reload({
+                preserveScroll: true,
+                preserveState: true,
+                onFinish: () => {
+                    setIsRefreshing(false);
+                },
+            });
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, [liveEnabled]);
 
     return (
-        <AppLayout title="Dashboard" breadcrumbs={[{ label: 'Overview' }]}>
+        <AppLayout
+            title="Dashboard"
+            breadcrumbs={[{ label: 'Overview' }]}
+            actions={
+                <div className="shadow-xs flex items-center gap-2 rounded-full border border-border bg-card/80 px-2.5 py-1 text-xs text-muted-foreground">
+                    <button
+                        type="button"
+                        onClick={() => setLiveEnabled((prev) => !prev)}
+                        className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+                        title={
+                            liveEnabled
+                                ? 'Auto-refresh active (every 30s). Click to pause.'
+                                : 'Live updates paused. Click to resume.'
+                        }
+                    >
+                        <span className="relative flex h-2 w-2">
+                            {liveEnabled && (
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            )}
+                            <span
+                                className={cn(
+                                    'relative inline-flex h-2 w-2 rounded-full',
+                                    liveEnabled ? 'bg-emerald-500' : 'bg-muted-foreground',
+                                )}
+                            />
+                        </span>
+                        <span className="text-[11px] font-medium text-foreground">
+                            {liveEnabled ? 'Live' : 'Paused'}
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsRefreshing(true);
+                            router.reload({
+                                preserveScroll: true,
+                                preserveState: true,
+                                onFinish: () => setIsRefreshing(false),
+                            });
+                        }}
+                        className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                        title="Refresh now"
+                    >
+                        <RefreshCw
+                            className={cn(
+                                'h-3 w-3',
+                                isRefreshing && 'animate-spin text-primary',
+                            )}
+                        />
+                    </button>
+                </div>
+            }
+        >
             {/* Whose screen this is, above the company's own figures. For a
                 rank-and-file login it is the only band here they can act on. */}
             <ProfileCard profile={profile} />
@@ -498,12 +615,7 @@ export default function Dashboard({
 
             {/* Headcount by department keeps its own card — it is a different
                 question from the trend above (who, not when). */}
-            <div
-                className={cn(
-                    'mb-5 grid gap-5',
-                    companyCards === 0 ? 'lg:grid-cols-1' : 'lg:grid-cols-3',
-                )}
-            >
+            <div className={cn('mb-5 grid gap-5', summaryColumns)}>
                 {leaveSummary && (
                     <Card floating className="lg:col-span-1">
                         <CardHeader
@@ -691,6 +803,98 @@ export default function Dashboard({
                         />
                     </CardBody>
                 </Card>
+
+                {/* The one AI feature in the system, and the only one that had
+                    no presence on this screen — which made it the thing nobody
+                    checked unless they went looking for it. Every figure is
+                    `ScanAccuracyReport`'s over the window in
+                    `scanner.accuracy.default_days`, so this card and the
+                    Scanner Accuracy screen cannot report two clean rates for
+                    one scanner. */}
+                {scannerSummary && (
+                    <Card floating>
+                        <CardHeader
+                            title="Document Scanner"
+                            action={
+                                <Link
+                                    href="/hr/scan-accuracy"
+                                    className="text-xs font-medium text-primary hover:underline"
+                                >
+                                    View all
+                                </Link>
+                            }
+                        />
+                        <CardBody>
+                            {/* All three go to the same screen, unlike the card
+                                above, and that is not an oversight: Scanner
+                                Accuracy *is* the screen that prints these three
+                                figures, so the reader can check every one of
+                                them against the rows behind it. There is no
+                                narrower list to open — a scan is a measurement,
+                                not a record somebody maintains. */}
+                            <div className="flex gap-2">
+                                <StatTile
+                                    label="Clean Reads"
+                                    /* Null until something has actually been
+                                       filed. "0%" there would report a scanner
+                                       that has never been wrong as one that is
+                                       never right. */
+                                    value={
+                                        scannerSummary.clean_rate === null
+                                            ? '—'
+                                            : `${scannerSummary.clean_rate}%`
+                                    }
+                                    tone={
+                                        scannerSummary.clean_rate === null ? 'muted' : 'success'
+                                    }
+                                    href="/hr/scan-accuracy"
+                                />
+                                {/* The actionable one: documents a person had
+                                    to type over, which is the number the
+                                    feature exists to drive down. */}
+                                <StatTile
+                                    label="Corrected"
+                                    value={scannerSummary.corrected}
+                                    tone="warning"
+                                    href="/hr/scan-accuracy"
+                                />
+                                {/* "Train your AI", made visible. Null when
+                                    SCANNER_LEARNING is off — the rules are
+                                    still derivable while nothing reads them,
+                                    and a count of nine the scanner is applying
+                                    none of is the card lying about itself. */}
+                                <StatTile
+                                    label="Learned"
+                                    value={scannerSummary.learned ?? 'Off'}
+                                    tone={scannerSummary.learning_enabled ? 'info' : 'muted'}
+                                    href="/hr/scan-accuracy"
+                                />
+                            </div>
+
+                            <TilePreview
+                                icon={Target}
+                                tone="primary"
+                                href="/hr/scan-accuracy"
+                                title={scannerSummary.latest?.title}
+                                subtitle={scannerSummary.latest?.subtitle}
+                                badge={
+                                    scannerSummary.latest && (
+                                        <Badge
+                                            variant={
+                                                SCAN_OUTCOME_TONES[
+                                                    scannerSummary.latest.outcome
+                                                ] ?? 'muted'
+                                            }
+                                        >
+                                            {scannerSummary.latest.outcome}
+                                        </Badge>
+                                    )
+                                }
+                                empty={`Nothing scanned in the last ${scannerSummary.days} days.`}
+                            />
+                        </CardBody>
+                    </Card>
+                )}
             </div>
 
             <div className="mb-5">

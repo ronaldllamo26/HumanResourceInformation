@@ -1,5 +1,4 @@
 import { useForm } from '@inertiajs/react';
-import { Info } from 'lucide-react';
 import SettingsLayout from '@/Layouts/SettingsLayout';
 import { Button, Card, CardBody, CardHeader, Field, Input } from '@/Components/ui';
 
@@ -61,15 +60,6 @@ export default function Notifications({ settings }) {
 
     return (
         <SettingsLayout title="Notifications">
-            <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary/40 px-4 py-3">
-                <Info className="mt-0.5 h-4.5 w-4.5 shrink-0 text-primary" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
-                    Notifications are currently{' '}
-                    <span className="font-medium text-foreground">in-app only</span> — they
-                    appear on the topbar bell. Email delivery is not wired up yet.
-                </p>
-            </div>
-
             <form onSubmit={submit} className="space-y-5">
                 <Card>
                     <CardHeader title="Events" />

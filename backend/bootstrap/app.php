@@ -1,15 +1,21 @@
 <?php
 
+use App\Http\Middleware\BlockWhileImpersonating;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequireOtp;
 use App\Http\Middleware\RequirePasswordChange;
 use App\Http\Middleware\RequirePrivacyAcknowledgement;
 use App\Http\Middleware\SecurityHeaders;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -43,6 +49,14 @@ return Application::configure(basePath: dirname(__DIR__))
             // an Inertia response rather than a full page load.
             RequirePasswordChange::class,
             RequirePrivacyAcknowledgement::class,
+            /*
+             * Last of the holds, and it is a refusal rather than a hold: an
+             * impersonated session may read anything the account can read and
+             * may not touch what the account signs in with. It runs after the
+             * three above because those decide whether the session may be
+             * here at all, and this decides what it may do once it is.
+             */
+            BlockWhileImpersonating::class,
         ]);
 
         // Both stacks: the API serves JSON to biometric devices and
@@ -90,21 +104,34 @@ return Application::configure(basePath: dirname(__DIR__))
         }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response, \Throwable $e, \Illuminate\Http\Request $request) {
-            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+        $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
+            if ($request->expectsJson()) {
+                return $response;
+            }
+
+            if ($e instanceof AuthenticationException) {
                 if ($request->header('X-Inertia')) {
-                    return \Inertia\Inertia::location(route('login'));
+                    return Inertia::location(route('login'));
                 }
 
                 return redirect()->guest(route('login'), 303);
             }
 
-            if ($e instanceof \Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException && $request->is('login')) {
+            if ($e instanceof MethodNotAllowedHttpException && $request->is('login')) {
                 if ($request->header('X-Inertia')) {
-                    return \Inertia\Inertia::location(route('login'));
+                    return Inertia::location(route('login'));
                 }
 
                 return redirect()->route('login', [], 303);
+            }
+
+            if ($response->getStatusCode() === 419) {
+                if ($request->header('X-Inertia')) {
+                    return Inertia::location(route('login'));
+                }
+
+                return redirect()->route('login', [], 303)
+                    ->with('status', 'Your session expired due to inactivity. Please sign in again.');
             }
 
             return $response;

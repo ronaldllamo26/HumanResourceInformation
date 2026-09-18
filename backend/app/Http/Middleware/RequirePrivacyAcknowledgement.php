@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ImpersonationService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -32,10 +33,28 @@ class RequirePrivacyAcknowledgement
         'session.keepalive',
     ];
 
-
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
+
+        /*
+         * An impersonated session is not held, and this is a correctness fix
+         * rather than a convenience.
+         *
+         * The acknowledgement is a **person** saying they have read what is
+         * collected about them — so holding an administrator on it would ask
+         * them either to abandon the impersonation or to accept a legal notice
+         * on somebody else's behalf, and `privacy.acknowledge` is blocked
+         * precisely so the second is not possible. Held, the pair left the
+         * administrator unable to leave: the hold caught the *stop* request
+         * too, so the session could neither go forward nor go back. Found by
+         * driving the real route against a live employee who had not
+         * acknowledged — the suite missed it because `UserFactory` defaults to
+         * acknowledged.
+         */
+        if (session(ImpersonationService::SESSION_KEY) !== null) {
+            return $next($request);
+        }
 
         if (
             ! $user

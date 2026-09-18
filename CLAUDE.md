@@ -441,6 +441,122 @@ Light and dark both work because components reference tokens, not values.
 - **A label that only exists on desktop belongs in `hidden sm:inline`.** Every
   `AppLayout` `actions` button already does this, which is why the topbar holds
   up on a phone: the icon stays, the word goes.
+- **A table that needs a horizontal scrollbar to be read has the columns
+  wrong, not the width wrong** — and Users & Access is where that was worked
+  out. It carried **nine** columns (User, Role, Employee #, Personal email,
+  Password, API tokens, Last sign-in, Status, Actions) beside **five
+  text-labelled action buttons**, so the name scrolled out of sight exactly
+  when the reader reached the buttons that act on it: choosing *Reset* or
+  *Delete* for a row whose name is no longer on screen. Six columns now, and
+  **nothing stopped being shown** — the three that went were merged into the
+  column they were already a fact about:
+  - **Employee # and Status joined Account.** Who somebody is, what they sign
+    in as, which 201 file they are and whether the login works are four facts
+    about one person, which is an argument for one cell rather than three
+    columns and a badge. The inactive badge is drawn **only when it is off**,
+    the same reason the credential indicator hides at zero: an always-lit
+    "Active" on every row is one nobody reads.
+  - **API tokens joined Last sign-in.** Both answer what this account has been
+    doing, and the count is absent on almost every row — a whole column to
+    print one character is the clearest case for merging there is. Drawn only
+    when there are any.
+  - **Password is not drawn at all for somebody who may not read it.** It said
+    "•••••••• Confidential" to every other role, which is width spent telling
+    the reader they may not use it. The header, the cell and `TableEmpty`'s
+    `colSpan` all read the one `can_view_passwords` flag, so the column count
+    cannot part company with the cell count.
+  - **The five actions are icon-only**, which was the single largest
+    contributor: spelled out they came to roughly 450px in one row, more than
+    the name, username and employee number together. Each keeps a `title` and
+    an `aria-label`, so the label is a hover away and a screen reader hears a
+    sentence rather than an icon name. **This is the one deliberate departure
+    from the `hidden sm:inline` rule above** — that rule is for a topbar with
+    three actions, and five in a table cell do not fit at any width. Delete
+    keeps its destructive tint, because an icon-only button that deletes an
+    account has to look different from the four beside it; the confirmation
+    modal is still what actually prevents the mistake.
+- **The sidebar has no animations, and removing them fixed a bug rather than
+  only a preference.** The owner reported that pressing a module made its
+  dropdown vanish, and asked for the animations to go. The vanishing was real
+  and the animation was only what made it visible: `AppLayout` is **not** a
+  persistent Inertia layout, so `Sidebar` remounts on every navigation — and
+  clicking a module parent *navigates*, because opening one lands on its first
+  page. The sequence was remount → `useState(null)` → the dropdown painted
+  **closed** → an effect ran after paint and opened it again over a 300ms
+  `grid-rows-[0fr]`→`[1fr]` transition. Every click collapsed the module you
+  had just opened and slid it back out.
+  - **The cause is fixed in the state, not the styling**: `expandedModule` is
+    seeded from the URL in the `useState` initialiser, so the first paint is
+    already correct and there is nothing to animate back from. The effect
+    stays and is not a duplicate — a URL can change without a remount on a
+    partial reload, and a module reached from a dashboard link or a redirect
+    rather than from its own parent button still has to open the right entry.
+    Both call one `ownerOfUrl()` so the two cannot disagree.
+  - **That was not the whole of it, and the rest is the more interesting
+    half.** The owner reported the same thing again for Employee Information
+    specifically, and the reason is a **redirect**: pressing a module
+    navigates to its first child, Employee Information's first child is
+    `/hr/my-profile`, and that **302s to `/dashboard` for any account with no
+    201 file** — which is every administrator, and the only account left on a
+    freshly emptied database. So the module opened, the visit bounced, the
+    sidebar remounted on a URL *nothing* owns, `ownerOfUrl()` answered null,
+    and the menu was shut before the reader's finger left the button. Seeding
+    from the URL cannot fix that, because the URL is the wrong one.
+    - **The open module is remembered per device** (`primepower-sidebar-module`
+      in `localStorage`, beside the collapsed rail's own key). The URL still
+      wins wherever it says anything; the memory only answers when it says
+      nothing, which is exactly what a redirect leaves behind. Wrapped in
+      try/catch — a private window throws rather than returning null, and
+      nothing here is worth failing a render over.
+    - **Only a deliberate press is remembered**, not the accordion following
+      the URL. Written into an effect on `expandedModule` instead, a visit to
+      one module would decide what the *next* page opens with.
+  - **A press closes only the module you are already inside**, and that
+    condition is the whole rule rather than a refinement. Toggling on "is it
+    open" reintroduces the same complaint by another route: the accordion can
+    be open because the *remembered* module was restored — on the dashboard,
+    say — and then the first press on that module closes it instead of going
+    into it. Being inside a module is the only state where collapsing it is
+    something somebody could mean, and it stays available there.
+    - The same `inside` test decides whether to navigate, where it used to be
+      "was it open". Already in the module, pressing the heading would
+      otherwise throw somebody on Positions back to My Profile for pressing
+      the label above the list they were using.
+  - **What is still true and is a design choice rather than a bug**: pressing
+    Employee Information as an account with no 201 file lands on the dashboard,
+    because that is where `/hr/my-profile` sends it. The dropdown now stays
+    open so the reader can pick a screen. The alternative is a parent row that
+    only discloses and never navigates, which removes the whole class of
+    bounce — worth reaching for if this comes back a third time.
+  - **The dropdown is rendered conditionally now** rather than collapsed with
+    a class, which also retired the `tabIndex={isOpen ? 0 : -1}` juggling: a
+    closed module's links are simply not in the document, so they cannot be
+    in the tab order either.
+  - **Four animations went, and the last two are about not leaving halves
+    behind**: the dropdown's expand, the chevron's rotate (it still flips,
+    instantly), the mobile drawer's slide, and — with them — the mobile
+    scrim's fade and `AppLayout`'s own 300ms content-column shift. That last
+    one lives outside the sidebar but existed only to slide the content pane
+    when the rail collapses, so left in, an easing content column would part
+    company from a snapping sidebar and leave a visible gap for 300ms.
+  - **`transition-colors` on hover stayed.** A colour fade under the cursor
+    cannot make content disappear, and removing it makes every row feel
+    abrupt — it is feedback rather than motion. `lg:translate-x-0`,
+    `-translate-x-full`, `rotate-180` and `w-sidebar-collapsed` all stayed
+    too, and each is load-bearing rather than decorative: the first is what
+    keeps the sidebar on screen at desktop width at all.
+- **Departments and Positions each have their own row again**, asked for by
+  the owner. They had been folded into one entry labelled `Organization Chart`
+  pointing at `/hr/departments`, with `activePrefixes` covering Positions so
+  the single row lit for both — which saved a row and cost the thing a sidebar
+  is for: **Positions had no link anywhere**, so the only way to it was to
+  open Departments and find the way across. One entry cannot be the door to
+  two screens. They are two screens for a reason the merged label hid: a
+  department is where somebody is filed, a position is what they are paid to
+  do, and Payroll checks a new rate against the *position's* salary band.
+  `/hr/directory` was in that entry's `activePrefixes` too and has no row of
+  its own either way — it is reached from the dashboard, which is the screen
+  it belongs to.
 - **A module with several screens is one sidebar entry with `children`**, which
   the sidebar renders as an expandable dropdown — not a flat link per screen.
   Payroll's seven screens live this way, same shape as Employee Information,
@@ -705,9 +821,41 @@ Light and dark both work because components reference tokens, not values.
   gradient with the same two halves, because the owner asked for the shape the
   other ISMERS systems use: somebody moving between Core 2 and Finance
   Management should not meet a different building each time. What survived
-  every move is the rule about the left panel — it carries an eyebrow, the
-  module name, a pill, a welcome headline and one sentence of what this
-  covers, not a bigger logo.
+  every move is the rule about the left panel: it says what the system *is*
+  rather than showing a bigger picture of the logo.
+  - **The third shape had a second pass, and it was about weight rather than
+    layout** — the owner asked for something cleaner while keeping the logo
+    visible. Three things came off the brand panel, and the first is the one
+    that was really making it heavy:
+    - **The brand name was said twice.** An eyebrow reading "PrimePower
+      Manpower" sat four lines above a headline reading "Welcome to PrimePower
+      Manpower". Two of five stacked text blocks were the same three words,
+      which is what the eye has to sort through before reaching the line that
+      says what the system is.
+    - **The "HR Control Center" pill** was a sixth element between the module
+      name and the headline carrying no fact the lines either side did not.
+    - **"Welcome to" went with it.** It is the least informative thing a front
+      door can say, so the headline is the system's own name now — the one
+      fact somebody arriving does not already have.
+  - **A hairline over the five modules by name** closes the panel:
+    "Employee records · Timekeeping · Leave · Payroll · Performance". Factual
+    rather than promotional — it names what is behind the door, which is why
+    it is allowed where the "5 modules · RBAC · signed audit trail" row was
+    not: those were claims about quality, and a row of claims under a headline
+    is a marketing page.
+  - **The logo got bigger rather than smaller** (112px → 128px disc), because
+    keeping it visible was half the request. It keeps the white disc and gains
+    a hairline ring, which gives it an edge against the navy instead of
+    letting it float.
+  - **Three layers sit behind the card** — a diagonal wash in the two brand
+    colours, one glow behind where the card sits so its edges have something
+    to lift off, and a vignette darkening the corners. The card itself gained
+    `ring-1`: a white card on a mid-blue field has no edge of its own, and
+    without the hairline it reads as a hole cut in the background.
+  - **The form side says where the credential came from** ("Use the account
+    your administrator issued you") in place of an `ACCOUNT ACCESS` eyebrow
+    that only restated the heading below it. That is the thing somebody
+    typing their Gmail into the first field has not been told.
   - **The three claims went with the full-bleed version.** "5 modules · RBAC ·
     signed audit trail" was true and checkable, which is the bar for anything
     on this page, and it does not survive being squeezed into a card beside a
@@ -721,9 +869,66 @@ Light and dark both work because components reference tokens, not values.
   - The decorative circles are drawn with `border` on two spans rather than
     loaded as an image: they cost no request and cannot be the asset that
     fails.
-  - **The logo sits on a white tile inside the navy panel.** The artwork is a
-    full-colour globe with a red wordmark and it disappears into the panel
-    without one — the same reason the watermark version of it ran at 7%.
+  - **The logo sits on the panel itself, with no white disc — and what
+    replaced the disc is the interesting part.** The owner asked for
+    transparency, and the artwork does carry it: `logo.png` measures alpha 127
+    at every corner, so removing the disc shows no white box. What the disc
+    was actually solving was contrast, and that problem does not go away with
+    it. Measured against this panel's navy (`rgb(15,27,38)`): **15.6% of the
+    artwork's opaque pixels fall below 2.0:1**, and its darkest are pure black
+    at **0.83:1** — darker than the background, so those parts do not fade,
+    they read as holes punched in the panel. That is the "PMS NETWORK INC"
+    subtitle and the globe's dark outlines, and it is the same fact that once
+    had the watermark version running at 7%.
+    - **A `drop-shadow` pair replaces the disc**, because a shadow follows the
+      image's own alpha rather than drawing a shape around it: the lift traces
+      the letterforms and the globe's edge, dark pixels get a light halo
+      exactly where they need one, and the panel stays uninterrupted
+      everywhere else. Two of them — a 10px one for the subtitle's fine
+      strokes and a 28px one for the mass of the globe.
+    - **One arbitrary `filter`, never that plus `drop-shadow-*`.** Tailwind's
+      utility sets `--tw-drop-shadow` and an arbitrary `filter` replaces the
+      whole property, so writing both leaves one of them dead code that reads
+      as live. Written both ways once here before being cut back to one.
+    - Freed of the disc's padding the mark is **bigger rather than smaller**
+      — 160px against 96px of drawn artwork — because keeping the logo
+      visible was the other half of the request. The wordmark is legible at
+      that size, which is the whole reason the brand panel carries the real
+      mark while the 40px sidebar one is paired with text.
+    - **The mobile logo row is left alone.** It sits inside the card on
+      `--card`, a light surface, where dark artwork has no contrast problem to
+      solve and a light glow would be invisible.
+    - **The first version of that shadow redrew the disc in light, which is
+      the mistake worth keeping written down.** It paired a 10px glow at 45%
+      with a 28px one at 25% — and 28px is wider than the gaps between the
+      globe and the wordmark arcing over it, so the halo filled those gaps and
+      fused into a solid pale blob. The owner had just asked for the white disc
+      to go, and the screenshot that came back showed what looked like a disc
+      with no disc anywhere in the markup. **A contrast fix that recreates the
+      thing it replaced is not a fix.** One 6px shadow at 30% now: a tight
+      radius traces the letterforms rather than filling between them, which is
+      all the black subtitle needs, and the globe's own edge is mid-blue and
+      was never the part at risk.
+- **The mark also sits behind the card as a watermark**, asked for once the
+  disc was gone, and it is **a white silhouette rather than the full-colour
+  artwork**. At watermark opacity the real logo puts a red wordmark over a blue
+  globe onto a blue field, and red at 6% against #007DCC turns a muddy
+  violet — the artwork stops reading as itself and reads as a printing fault.
+  `grayscale(1) brightness(0) invert(1)` collapses every colour to one, so what
+  shows is the *shape*: the meridians and the arc of the wordmark, which is
+  what the mark is recognisable by from across a room. The filter touches only
+  opaque pixels, so the PNG's transparency survives and no box appears.
+  - **It is wider than the card on purpose** (78rem). The card is opaque and
+    centred, so a watermark that fitted inside it would be a file nobody ever
+    sees; running past the card on every side makes the visible part the halo
+    around it.
+  - **6% is near the floor deliberately**, the same figure the earlier
+    watermark ran at: a logo behind a sign-in form is decoration, and
+    decoration that can be read as content has gone wrong. It stacks above the
+    three gradient layers and below the card — the only order where it shows
+    at all and still cannot touch the form.
+  - It costs no extra request: it is the same `/images/logo.png` the brand
+    panel already loads, so the browser fetches one file and draws it twice.
   - **`--hero`, `--hero-foreground`, `--hero-muted` and `--hero-accent` hold
     the same four values in the light and dark blocks, deliberately.** A
     signed-out visitor has not chosen a theme yet, and a front door that is
@@ -741,6 +946,14 @@ Light and dark both work because components reference tokens, not values.
     words ("a forgotten password is reset by an administrator on Users &
     Access — nothing here is emailed"), because that is the question somebody
     reaches for the absent link to ask.
+    - **It had gone missing from the page while this file still described
+      it**, probably in the pass that stripped 84 explanatory descriptions —
+      so the one question the absent link raises had no answer on the screen
+      at all, and the documentation was asserting a line nobody could read. It
+      is back, under a hairline below the button. Worth noting as a class of
+      drift rather than a one-off: a removal made by rule across many screens
+      is exactly where a line that was load-bearing on one of them goes
+      quietly.
 - **The four record links above a 201 file are one component and one colour**,
   and the colour is why they were rewritten. They were three hand-written
   cards, identical apart from their tint — one `info`, one `success`, one
@@ -1428,6 +1641,50 @@ write-up has to report, so it is one job with two deliverables.
   there.
 - Behind `viewAuditLog` rather than a new permission: it is the same class of
   thing, a record of what the system and its users did.
+- **The dashboard carries a Document Scanner card, and the reason it has one
+  is that the scanner was the only feature in the system with no presence on
+  the landing page** — which made how well it reads a document the one figure
+  nobody checked unless they went looking for it. Its whole justification is
+  that a licence keyed a year late is a driver the system believes is legal to
+  dispatch, so the clean rate belongs where the figures are read. Three tiles
+  and a preview, same shape as the three cards beside it.
+  - **Every number is `ScanAccuracyReport`'s.** A clean rate computed in
+    `DashboardController` would be a private copy of the rules, and the day it
+    disagreed with this screen the reader would have two answers about one
+    scanner and no way to tell which was right.
+  - **The window is `scanner.accuracy.default_days`, read by both.** It was
+    hard-coded here as 90; two copies of it would part company the first time
+    one was tuned, and silently in the worst way — a card reading 87% beside a
+    screen reading 81% for the same scanner, with nothing on either saying
+    they were measured over different months. Same reasoning as `idle.timeout`
+    being shared from one config value rather than restated in the component
+    that counts down.
+  - **`clean_rate` is null rather than 0 with nothing filed**, and the tile
+    prints "—". Rendering it as 0% would report a scanner that has never been
+    wrong as one that is never right, on the first screen a fresh install ever
+    shows. `rate()` already returned null for a zero denominator; the card had
+    only to not flatten it.
+  - **"Learned" is the `train your AI` figure made visible** —
+    `ScannerCorrectionMemory::rules()->count()`, the headings HR's corrections
+    have taught the classifier. It reads **null, and the tile says "Off",**
+    when `SCANNER_LEARNING=false`: the rules stay derivable while nothing
+    reads them, and a tile claiming the system learned nine things it is
+    applying none of is the card telling a lie about itself.
+  - **Gated on `viewAuditLog`, asked of the policy rather than borrowed from
+    `can.viewCompanyFigures`.** The two are the same people today and answer
+    different questions — may this person read company money, may this person
+    read the audit trail — and the card links to a screen behind the second.
+    A supervisor and an employee get no card at all rather than a link into a
+    403.
+  - **No card at all when nothing has been scanned *and* no key is
+    configured**, because then there is no feature to report on: a dark
+    feature is not a broken one, but a card of dashes is how a reader
+    concludes it is. Scans already on record still draw once the driver is
+    switched off — the measurement is history and stays worth reading.
+  - The summary grid's column count follows how many cards survived role
+    filtering. A fixed `lg:grid-cols-3` holding four leaves the fourth alone
+    on a row of its own; four across at 1280px is 300px a card, which three
+    tiles and a preview line do not read in, so it is two-by-two until `2xl`.
 
 ## Hiring comes from Core 1 (Module 1)
 
@@ -1437,16 +1694,33 @@ and becomes an employee only when somebody here approves it — so the act of
 putting a person on the payroll has a decision, a decider, and a date attached
 to it.
 
-- **`/hr/employees/create` has a direct door again — and it has to say why.**
-  It was once open with no record, then closed so every hire came through an
-  endorsement; the owner asked for an **Add Employee** button back. A bare visit
-  now opens the form as a *direct add*: `store()` without `endorsement_id`
-  requires `direct_hire_reason` (10–500 characters) and writes a `direct_hire`
-  audit row with the reason beside the created employee. That keeps the thing
-  the endorsement existed to record — someone decided, who, and why — without
-  pretending every hire comes from recruitment (rehires, transfers, urgent
-  replacements do not). An `endorsement_id` that no longer exists still goes
-  back to the inbox and creates nobody.
+- **`/hr/employees/create` has a direct door again.** It was once open with no
+  record, then closed so every hire came through an endorsement; the owner
+  asked for an **Add Employee** button back. A bare visit opens the form as a
+  *direct add*: `store()` without `endorsement_id` creates the employee and
+  writes a `direct_hire` audit row beside them. An `endorsement_id` that no
+  longer exists still goes back to the inbox and creates nobody.
+  - **The required reason is gone, removed on the owner's instruction, and
+    what it cost is recorded here rather than dropped quietly.** A
+    `direct_hire_reason` of 10–500 characters used to be required and went
+    into the audit row. An endorsement records three things — that somebody
+    decided, who they were, and why — and with no endorsement behind a direct
+    add, the typed reason stood in for the third.
+  - **The row stays; only the explanation went.** `direct_hire` still names
+    who added whom, when, and from which address, so a hire that skipped
+    recruitment is still visible in the trail. What is no longer captured is
+    the *why*: a rehire, a transfer and an urgent replacement now look
+    identical, and anybody asking six months later why this employee never
+    went through Core 1 has nothing on the record to read. That is a real gap
+    and an accepted one — losing the row as well was not what was asked for,
+    and "added directly, by whom" is a cheaper and different fact from the
+    explanation.
+  - **Both tests were rewritten rather than deleted.**
+    `test_a_direct_add_needs_no_reason` is the inverse of the one it replaces,
+    and `test_a_direct_add_is_still_logged_as_one` asserts the row *and* that
+    it carries no `reason` key. A requirement that simply stops being tested
+    cannot be told apart from one that rotted, and the second test is what
+    stops the row going with the field the next time somebody tidies up.
 - **Bulk import stays open, because it is a different act.** Digitising a
   workforce that already works here is not hiring: there is no endorsement for
   somebody on their sixth year. `/hr/employees/import` and the batch document
@@ -1811,6 +2085,42 @@ redirects to `/hr/departments` rather than 404ing.
 - Positions with no salary band are **counted, not flagged as an error**. A
   band is optional and advisory, but a rate keyed against a bandless position
   has nothing to be compared to, which is worth seeing.
+- **`DepartmentSeeder` holds the agency's real org structure — ten
+  departments and 39 positions — and it is idempotent**, keyed on `code`
+  through `updateOrCreate`, so running it again corrects names rather than
+  duplicating rows. That is also the recovery path: `hris:reset-demo-data`
+  deletes departments and positions (they were seeded examples when that was
+  written), so after a wipe this is one command rather than 49 forms.
+  - **Fleet & Transportation Management was missing from it entirely**, on a
+    Fleet & Transportation HRIS, and it matters more than its row count
+    suggests: every other department is the agency running itself, while this
+    is where the **deployable** workforce sits — the people billed to a client,
+    and the reason `LicenseVerifier`, the DL codes, the conditions and
+    Deployment Readiness exist at all.
+  - **A position title is load-bearing, not a label.**
+    `config('onboarding.by_position')` matches the fragment `driver` and
+    requires a driver's licence as a **blocking** document, so the titles are
+    worded around that rather than around how they read: "Professional Driver"
+    and "Heavy Vehicle Driver" both match and both demand a licence (verified
+    against the live rows), while "Motor Vehicle Operator" would have created
+    a driving role 201 File Status never asks a licence of — and the first
+    anybody would know is a dispatcher sending somebody out with nothing on
+    file.
+    - **"Heavy Equipment Operator" deliberately does not match**, and the cost
+      is stated rather than designed around: an operator works a machine
+      rather than a public road, so the blocking requirement does not reach
+      them. If it should, that is a line in `config/onboarding.php` — not a
+      word smuggled into a job title to trip a regex.
+  - Three names were corrected against the owner's own list while adding the
+    tenth: `Human Resource Information System` → `…Information Management`,
+    `Compliance and Benefits` → `Employee Development, Compliance and
+    Benefits` (which earned it two training positions — a compliance officer
+    and a benefits specialist do not between them run a training calendar),
+    and `Governance Safety & Safety Administration` → `Governance, Safety and
+    Administration`, which had said safety twice and read as a typo rather
+    than a department. `GSA-SOF` is titled plain **Safety Officer** because
+    that is what DOLE accredits under D.O. 198-18, and a fleet operator is
+    required to have one.
 
 ## Educational & qualification records (Module 1)
 
@@ -2293,6 +2603,90 @@ user, and **Audit Logs is the one section that is neither** — `viewAuditLog` i
     nothing wrong is stored either way.
 - **Appearance** (theme, sidebar default) is per-device and lives in
   `localStorage`, not the database.
+- **Data & Backup says where the database *is*, and can now actually take a
+  copy of it.** It printed the connection name and the sentence "back up with
+  your database server's own dump tooling", which is true and is not a
+  feature — it is a sentence pointing at a terminal, and there is no terminal
+  on the deployment host. That is the same gap `hris:set-admin-password`
+  exists to close for a lost password.
+  - **"Local" or "Remote server" is decided from the host**, in
+    `DatabaseBackup::describe()` — the loopback address and nothing else is
+    this machine. On a system developed locally and deployed to a container
+    that is the difference between a dump somebody can throw away and a dump
+    that is the company's payroll, and the card used to leave it out entirely.
+    Resolving it more finely than that would be guessing at a hosting
+    arrangement from an IP address.
+  - **`pg_dump` is *asked whether it runs*, not just found — and that
+    distinction is this machine's own bug.** The first version took the first
+    `pg_dump` on the PATH and reported the backup as available; that binary is
+    PostgreSQL 16's, which dies at process start with `0xC0000135`
+    (STATUS_DLL_NOT_FOUND) on a missing CRT DLL, exactly as the pg_dump note
+    further down this file records. So the screen drew an enabled button that
+    failed the moment it was pressed — worse than a disabled one, because a
+    control that lies about being usable costs the reader their trust in the
+    rest of the screen. Every candidate is now probed with `--version`, which
+    fails the same way a real dump would, and the first that answers is used.
+    Verified end to end afterwards: PostgreSQL 18's binary, a 208 KB file
+    whose first five bytes are `PGDMP`.
+  - **`unavailableReason()` returns a sentence rather than false**, because
+    the two causes are fixed by different people in different places: an
+    unsupported driver is a decision in `.env`, a missing binary is something
+    to install on the server. "Backup unavailable" would send both of them
+    looking in the wrong place. `DB_DUMP_BINARY` is **the only candidate when
+    it is set** — falling through would leave somebody reading a config value
+    that is quietly doing nothing, and the reason they set it is that the
+    automatic choice was wrong.
+  - **Only PostgreSQL**, deliberately. A `mysqldump` branch would be a code
+    path nobody exercises pretending to be a supported one, and a backup path
+    that has never been run is not a backup path. On the suite's SQLite the
+    screen says so instead of offering a button that produces an empty file.
+  - **`SettingPolicy::backupDatabase` is super administrator only, not
+    `manage`** — which is what the rest of that screen sits behind. Editing
+    how long the audit trail is kept and downloading every payslip,
+    government identifier and bank account in the company are not the same
+    act, and they share a screen only because both are about data. A dump
+    carries the ciphertext of every encrypted column, with `APP_KEY` the only
+    thing between it and plaintext, so it gets the narrowest holder there is.
+  - **Audited through `DataAccessLogger::exported()`**, after the gate and
+    after the dump succeeds — "who took a copy of everything, and when" is
+    precisely what that trail is for, and a refused request must never be
+    recorded as an access. The file is streamed and then deleted:
+    `deleteFileAfterSend()`, never written into `storage/app`, which is every
+    government number in the company waiting for the first misconfigured
+    document root.
+  - The password goes to `pg_dump` **in the environment, never as an
+    argument** — an argument is visible in the process list to every other
+    user on the machine, which is how a database password leaks with nothing
+    logged. Timeout raised to 300s, because the default 60 would cut a real
+    dump off mid-write and hand over a file that looks like a backup and
+    restores to nothing.
+  - **GET, like `audit-logs/export` beside it**, and a POST was the first
+    shape. The response is a file and a browser has to navigate to it; an
+    Inertia POST hands the binary to the page renderer instead of the download
+    manager. Throttled `3,1` to buy back what the POST was for.
+- **Data & Backup's record counts link to the rows they counted**, which is
+  the dashboard tile rule being followed on a screen that was quietly
+  breaking it: a count of 1,247 payslips that cannot be opened has raised a
+  question and then refused to answer it. Three of the five links were wrong
+  on the first attempt and each was found by following it rather than by
+  reading the code — the same way both dashboard versions of this bug were
+  found.
+  - **The employee figure is split in two rather than totalled.** It was one
+    count taken `withTrashed()`, so it read 42 while `/hr/employees` showed
+    38. Archived rows are their own count with their own screen, because a
+    link that returns a different number from the figure that sent you is
+    worse than no link — two screens now disagree and neither says why.
+  - **`/hr/performance`, not `/hr/performance/reviews`**, which exists only
+    with an id after it: the obvious-looking plural would have been a 404
+    reached from a settings screen.
+  - **The audit link carries `group=all` *and* a `from`**, because that screen
+    narrows twice by default — record changes only, and the last thirty days
+    only. `from` is the date of the oldest row rather than a fixed early date:
+    one cheap `min()` that cannot go stale, where "2020-01-01" would quietly
+    start excluding rows the day somebody imports older history.
+  - `?status=all` on the leave link was the first guess and `all` is not one
+    of `LeaveRequest::STATUSES`; that screen applies no default filter, so a
+    bare visit is already the whole table.
 
 ## Security
 
@@ -2629,6 +3023,112 @@ behind `viewSensitive`). What follows is the layer underneath them.
   for its key before a user is resolved, and keying off a null user silently
   drops every token into one shared per-address bucket. Ceiling is
   `sanctum.rate_limit` (60/min), far above a device's real use.
+- **A super administrator can sign in as somebody else, and the whole feature
+  is built around the assumption that the ability will eventually be
+  misused.** "It works for me" is what a support request usually gets, and
+  the reason is scope: almost every screen here narrows by role and by who
+  reports to whom, so a bug on an employee's own payslip is frequently
+  invisible to the person asked to fix it. The alternative is asking for their
+  password, which is the one thing nobody should ever be asked for. Four
+  things hold it in place, and each has a test:
+  - **`SettingPolicy::impersonate` is super administrator only**, not shared
+    with `isAdmin()` the way `manageAccountRequests` is. An administrator can
+    already reset a password and read the audit log, which covers support and
+    accountability between them; this is the one ability that lets somebody
+    *act* as another person.
+  - **A super administrator cannot be impersonated, including by a peer.**
+    `ImpersonationService::refusalReason()` answers *whom*, separately from
+    the policy's *who*. A peer already sees everything you see, so there is no
+    support value in it — only cover for an action the trail would attribute
+    to another administrator. A deactivated account is refused too, because
+    `EnsureAccountIsActive` would sign the session straight back out and the
+    button would look broken rather than refused.
+  - **`audit_logs.impersonated_by` names who was really at the keyboard.**
+    This is the part that makes the feature defensible rather than merely
+    convenient: once impersonating, `Auth::id()` *is* the employee, so without
+    the column every row an administrator wrote would be filed under the
+    person it was done to, with nothing to say otherwise. `user_id` keeps
+    meaning "the account this ran as", which every existing screen already
+    reads it as. It is a data problem rather than a UI one — no banner
+    survives into the trail an auditor reads a year later.
+    - **The signer covers the column only when it is set**, and the condition
+      is load-bearing. Appended unconditionally it would change the canonical
+      string of every row written before the migration and report all 3,921 of
+      them as altered — a tamper-evident trail crying tamper at its own
+      migration is one nobody believes the next time it speaks. Left out of
+      the signature entirely it would be the one field on the row editable
+      with nothing to break, and it is exactly the field somebody covering
+      their tracks would clear. Conditional inclusion holds both ways:
+      clearing a real impersonator drops the field and breaks the signature,
+      inventing one on an old row adds it and breaks the signature. Verified
+      after migrating: 3,921 rows, all still valid.
+  - **`BlockWhileImpersonating` closes the credential routes.** Reading
+    somebody's screen is support; changing what they sign in with is takeover,
+    and the quiet version of it is the employee's password simply ceasing to
+    work with a trail saying they changed it themselves. The password, the
+    username, the role, password resets, API tokens and the account-request
+    queue are all refused with a 403 naming the way out. Everything else stays
+    open on purpose — an impersonation that could only read would not
+    reproduce the bug reports that prompted it.
+    - **The blocked list names `settings.impersonate.start` exactly, not
+      `settings.impersonate.*`.** The wildcard also matched `stop` and trapped
+      the administrator inside the session they were trying to leave — the
+      precise failure the route's own comment warns about, written by the same
+      hand that then wrote the wildcard. A test caught it; reasoning about it
+      twice did not.
+  - **`stop` sits outside the gate deliberately.** The session pressing it is
+    authenticated as the employee, who does not hold `impersonate`, so asking
+    the policy there would be the trap above by a different route. The
+    session's own recorded administrator is the authority, and only a request
+    that already passed the gate could have put it there.
+  - **`RequireOtp` steps aside for an impersonated session**, and that is
+    honesty rather than convenience: the code goes to the employee's own
+    personal inbox, which the administrator cannot read and must not be
+    handed. Asked for it, an impersonation would dead-end on the code screen
+    while a login alert landed in the employee's Gmail for a sign-in they did
+    not make. The factor is not skipped either — the administrator answered
+    *their own* code to reach the button.
+  - **The banner is `sticky` and cannot be dismissed**, in `--destructive`
+    rather than a warning amber: amber means "somebody should look at this",
+    and this is closer to "you are holding somebody else's identity". Shared
+    from `HandleInertiaRequests` rather than passed per controller, because an
+    impersonation outlives the request that started it and the one failure the
+    feature cannot afford is an administrator who has forgotten whose screen
+    they are on.
+- **`/settings/sessions` answers who is signed in right now, and signs them
+  out.** The five-minute idle window closes an abandoned desk; none of the
+  cases this screen exists for can wait five minutes — a password known to
+  have leaked, a laptop that walked out of the building, a contractor whose
+  engagement ended an hour ago. `SESSION_DRIVER=database` is what makes it
+  answerable at all: a file or cookie driver leaves no list anybody can read.
+  - **Super administrator only** (`SettingPolicy::manageSessions`), narrower
+    than the rest of Administration, because the list is every signed-in
+    person's address and device — a map of the workforce's whereabouts nothing
+    else in this system hands over — and ending a session is an incident
+    response rather than an HR task.
+  - **API tokens are deliberately left alone.** They are unattended
+    credentials on biometric devices with nobody at the other end to sign in
+    again, so ending a browser session must not take the timeclock down as a
+    side effect. Revoking one is its own decision on the integrations screen —
+    the same line `RequirePasswordChange` already draws.
+  - **"Sign out everyone" spares the actor's own session**, because an
+    administrator thrown out by their own first action has to stop and sign
+    back in, through a second factor, on a system they were in the middle of
+    securing. The one session excluded is the one whose owner is demonstrably
+    present.
+  - Every termination writes an audit row with its scope and count, **even at
+    zero**: "somebody pressed sign out everywhere and nothing was open" is a
+    fact about the response to an incident, and a trail keeping only the
+    successful half cannot reconstruct one.
+  - **Refusing to end your own session from the list is not covered by the
+    suite, and the gap is recorded rather than left to look forgotten.** Tests
+    run on `SESSION_DRIVER=array`, where the id is not persisted and each
+    request gets a fresh one — measured at `zEOck…` on the test side against
+    `87zWi…` inside the very next request. The id a test can read is therefore
+    never the id the request carries, so the comparison cannot be reached from
+    outside however the assertion is written, and forcing the database driver
+    does not change it. It holds in a browser, where one cookie carries one id
+    throughout.
 - **The audit trail is its own screen — `/settings/audit-logs`, under
   Administration — and no longer 50 rows at the bottom of Settings →
   Security.** That was the wrong place twice over: Security is where a person
@@ -2985,6 +3485,28 @@ login with it.
 - **It refuses to run without `--force`** and prints what it *would* delete
   instead. A command that empties a payroll system on a typo is a command
   nobody should have written.
+- **The guard on "is there a login left" refused the real database for a
+  while, and the shape of that failure is worth keeping.** It looked for
+  `ROLE_ADMIN` alone, which was the whole set of administrators when it was
+  written — then `super_admin` arrived and the seeded `admin@primepower.com`
+  was promoted into it, leaving no `admin` row anywhere. So the command
+  answered "No administrator account — refusing to run" on a system that had
+  had an administrator the entire time. Right in substance (never leave a
+  database nobody can sign in to) and wrong in fact, which is the more
+  dangerous of the two: **a refusal nobody can explain is one somebody works
+  around with `migrate:fresh`**, which would have taken the schema and the
+  login with it.
+  - It looks for either role now, ordered so a **super administrator is the
+    one kept** when both exist — it is the higher authority, and the account
+    that must not turn out to be the one deleted.
+  - **The command had no test at all**, which is exactly how a role added
+    elsewhere broke it silently. `ResetDemoDataTest` covers the seven things
+    worth holding: a super administrator alone is enough, a super
+    administrator outranks a plain one, neither present is refused *and
+    deletes nothing on the way to refusing*, a dry run deletes nothing, the
+    master data and settings survive, the clearing is the one audit row left,
+    and `--keep-audit` leaves the trail alone. A new role is a cheap thing to
+    add and this is the kind of code it silently reaches.
 - **What survives is short and deliberate**: the administrator's own login
   (there is no terminal on the deployment host and no emailed reset, so an
   account-less database is a locked door), the company settings, and the master
@@ -2998,11 +3520,15 @@ login with it.
 - `Setting::flushCache()` runs afterwards: the settings map is cached forever,
   and reading it after the rows underneath have gone is how a wiped system
   keeps reporting a company that is no longer there.
-- **Every screen was checked against the empty database** — 49 of them, all
-  200 — because a wipe is exactly when a division by a zero headcount or a
-  `->first()->name` shows up. Two "failures" were the design working:
-  `/hr/my-profile` redirects with a message for an account that has no 201
-  file, and the 13th-month path is `/hr/payroll/13th-month`.
+- **Every screen is checked against the empty database** — 49 of them, all
+  200 on the most recent wipe — because a wipe is exactly when a division by a
+  zero headcount or a `->first()->name` shows up, and none of it appears in a
+  suite that seeds its own rows. Both times, every "failure" turned out to be
+  a wrong URL in the check rather than a broken screen: `/hr/my-profile`
+  redirects for an account with no 201 file, the 13th-month path is
+  `/hr/payroll/13th-month`, Daily Time Records is `/hr/timekeeping` rather
+  than `/hr/timekeeping/records` (the `{any}` legacy route catches the
+  latter), and `/hr/payroll/periods` is POST-only and not a screen at all.
 - **The local database was dumped first**
   (`storage/app/backups/full-before-demo-reset-*.dump`). Note that **pg_dump 16
   on this machine cannot run** — it dies on a missing CRT DLL under both Git

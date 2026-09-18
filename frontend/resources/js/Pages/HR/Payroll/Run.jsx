@@ -9,6 +9,7 @@ import {
     Play,
     Receipt,
     Send,
+    Trash2,
     TriangleAlert,
     Wallet,
 } from 'lucide-react';
@@ -48,6 +49,15 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
 
     const submit = (event) => {
         event.preventDefault();
+
+        if (action === 'delete') {
+            router.delete(`/hr/payroll/runs/${run.id}`, {
+                onSuccess: () => {
+                    setAction(null);
+                },
+            });
+            return;
+        }
 
         form.post(`/hr/payroll/runs/${run.id}/${action}`, {
             preserveScroll: true,
@@ -140,6 +150,18 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                             Cancel
                         </Button>
                     )}
+
+                    {can.delete && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setAction('delete')}
+                        >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                        </Button>
+                    )}
                 </div>
             }
         >
@@ -156,7 +178,6 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                     value={run.employee_count}
                     icon={Receipt}
                     tone={run.employee_count > 0 ? 'primary' : 'muted'}
-                    hint={run.period.name}
                 />
 
                 <StatCard
@@ -164,7 +185,6 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                     value={formatCurrency(run.total_gross)}
                     icon={Wallet}
                     tone="info"
-                    hint="before contributions and tax"
                 />
 
                 {/* As a share of gross. The figure on its own says nothing —
@@ -178,7 +198,6 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                     icon={TriangleAlert}
                     tone={deductionShare > 40 ? 'warning' : 'info'}
                     iconTone="warning"
-                    hint="of gross — SSS, PhilHealth, Pag-IBIG, tax, loans"
                 />
 
                 <StatCard
@@ -186,7 +205,6 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                     value={formatCurrency(run.total_net)}
                     icon={Banknote}
                     tone="success"
-                    hint="what lands in the bank"
                 />
             </div>
 
@@ -408,7 +426,13 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
             <Modal
                 show={Boolean(action)}
                 onClose={() => setAction(null)}
-                title={action === 'approve' ? 'Approve this payroll run?' : 'Cancel this run?'}
+                title={
+                    action === 'approve'
+                        ? 'Approve this payroll run?'
+                        : action === 'delete'
+                          ? 'Delete this payroll run?'
+                          : 'Cancel this run?'
+                }
                 maxWidth="md"
             >
                 <form onSubmit={submit} className="space-y-4">
@@ -423,6 +447,11 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                                 figures and applies loan amortisations — it cannot be recomputed
                                 afterwards.
                             </>
+                        ) : action === 'delete' ? (
+                            <>
+                                {run.run_number} will be permanently deleted along with all its
+                                computed payslips.
+                            </>
                         ) : (
                             <>
                                 {run.run_number} will be cancelled. Its payslips stay on record
@@ -431,18 +460,20 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                         )}
                     </p>
 
-                    <Field label="Remarks" error={form.errors.remarks}>
-                        {({ id }) => (
-                            <Textarea
-                                id={id}
-                                rows={2}
-                                value={form.data.remarks}
-                                onChange={(event) =>
-                                    form.setData('remarks', event.target.value)
-                                }
-                            />
-                        )}
-                    </Field>
+                    {action !== 'delete' && (
+                        <Field label="Remarks" error={form.errors.remarks}>
+                            {({ id }) => (
+                                <Textarea
+                                    id={id}
+                                    rows={2}
+                                    value={form.data.remarks}
+                                    onChange={(event) =>
+                                        form.setData('remarks', event.target.value)
+                                    }
+                                />
+                            )}
+                        </Field>
+                    )}
 
                     <div className="flex justify-end gap-2">
                         <Button variant="outline" onClick={() => setAction(null)}>
@@ -450,10 +481,14 @@ export default function Run({ run, payslips, readiness, anomalies, breakdown, fi
                         </Button>
                         <Button
                             type="submit"
-                            variant={action === 'cancel' ? 'destructive' : 'primary'}
+                            variant={action === 'approve' ? 'primary' : 'destructive'}
                             loading={form.processing}
                         >
-                            {action === 'approve' ? 'Approve Run' : 'Cancel Run'}
+                            {action === 'approve'
+                                ? 'Approve Run'
+                                : action === 'delete'
+                                  ? 'Delete Run'
+                                  : 'Cancel Run'}
                         </Button>
                     </div>
                 </form>

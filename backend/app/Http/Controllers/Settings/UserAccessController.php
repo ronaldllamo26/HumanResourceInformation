@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Listeners\RecordAuthenticationEvents;
+use App\Models\AccountChangeRequest;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\Setting;
@@ -14,6 +15,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -40,10 +42,38 @@ class UserAccessController extends Controller
     {
         Gate::authorize('manageUsers', Setting::class);
 
+        $isSuperAdmin = $request->user()->isSuperAdmin();
+        $canManageRequests = $request->user()->can('manageAccountRequests', Setting::class);
+        $canViewPasswords = $request->user()->can('viewStaffPasswords', Setting::class);
         $lastSignIns = $this->lastSignIns();
         $staleBefore = now()->subDays(self::STALE_AFTER_DAYS);
 
+        $changeRequests = $canManageRequests
+            ? AccountChangeRequest::with(['user:id,name,username,otp_email', 'decider:id,name'])
+                ->latest()
+                ->get()
+                ->map(fn (AccountChangeRequest $r) => [
+                    'id' => $r->id,
+                    'user_id' => $r->user_id,
+                    'staff_name' => $r->user?->name ?? 'Unknown Staff',
+                    'current_username' => $r->current_username,
+                    'requested_username' => $r->requested_username,
+                    'current_email' => $r->current_email,
+                    'requested_email' => $r->requested_email,
+                    'staff_notes' => $r->staff_notes,
+                    'status' => $r->status,
+                    'decided_by' => $r->decider?->name,
+                    'decided_at' => $r->decided_at?->toIso8601String(),
+                    'admin_notes' => $r->admin_notes,
+                    'created_at' => $r->created_at?->toIso8601String(),
+                ])
+            : [];
+
         return Inertia::render('Settings/Users', [
+            'is_super_admin' => $isSuperAdmin,
+            'can_manage_requests' => $canManageRequests,
+            'can_view_passwords' => $canViewPasswords,
+            'change_requests' => $changeRequests,
             'users' => User::with('employee:id,user_id,employee_number,first_name,middle_name,last_name,suffix')
                 ->orderBy('name')
                 ->get()
@@ -68,6 +98,12 @@ class UserAccessController extends Controller
                     // one person and nothing here reconciles them.
                     'employee_name' => $user->employee?->full_name,
                     /*
+                     * Passwords are encrypted at rest with AES-256-CBC.
+                     * Only Super Administrator is authorized to receive decrypted staff passwords.
+                     * For regular administrators, this is strictly null.
+                     */
+                    'password_plain' => $canViewPasswords ? $user->getDecryptedPassword() : null,
+                    /*
                      * The personal inbox sign-in codes go to. Shown in full
                      * rather than masked: the administrator is the person who
                      * has to notice a typo in it, and a masked address is one
@@ -82,12 +118,13 @@ class UserAccessController extends Controller
                     'created_at' => $user->created_at?->toDateString(),
                 ]),
 
-            'roles' => [
+            'roles' => array_values(array_filter([
+                $isSuperAdmin ? ['value' => User::ROLE_SUPER_ADMIN, 'label' => 'Super Administrator', 'description' => 'Highest authority: approve credential changes, manage system accounts and security.'] : null,
                 ['value' => User::ROLE_ADMIN, 'label' => 'Administrator', 'description' => 'Full access, including payroll approval and settings.'],
                 ['value' => User::ROLE_HR_STAFF, 'label' => 'HR Staff', 'description' => 'Runs every module; cannot approve payroll or change settings.'],
                 ['value' => User::ROLE_SUPERVISOR, 'label' => 'Supervisor', 'description' => 'Own record plus direct reports; endorses leave and overtime.'],
                 ['value' => User::ROLE_EMPLOYEE, 'label' => 'Employee', 'description' => 'Own record, payslips, and filings only.'],
-            ],
+            ])),
 
             /*
              * Whether the factor is switched on at all, so the screen can say
@@ -103,11 +140,15 @@ class UserAccessController extends Controller
             'staleAfterDays' => self::STALE_AFTER_DAYS,
 
             // Employees who could be given a login but do not have one yet.
-            'unlinkedEmployees' => Employee::whereNull('user_id')
+            'unlinkedEmployees' => Employee::where(function ($q) {
+                $q->whereNull('user_id')
+                    ->orWhereDoesntHave('user', fn ($uq) => $uq->whereNull('deleted_at'));
+            })
                 ->orderBy('last_name')
-                ->get(['id', 'first_name', 'middle_name', 'last_name', 'suffix', 'email'])
+                ->get(['id', 'employee_number', 'first_name', 'middle_name', 'last_name', 'suffix', 'email'])
                 ->map(fn (Employee $employee) => [
                     'id' => $employee->id,
+                    'employee_number' => $employee->employee_number,
                     'full_name' => $employee->full_name,
                     'email' => $employee->email,
                     // Suggested, not assigned: the admin may type another.
@@ -183,6 +224,7 @@ class UserAccessController extends Controller
             'username' => $validated['username'] ?? null,
             'role' => $validated['role'],
             'password' => $password,
+            'visible_password' => Crypt::encryptString($password),
             'is_active' => true,
             // See RequirePasswordChange: a password the administrator has read
             // is not the account holder's password yet.
@@ -191,7 +233,14 @@ class UserAccessController extends Controller
         ]);
 
         if ($validated['employee_id'] ?? null) {
-            Employee::whereKey($validated['employee_id'])->update(['user_id' => $user->id]);
+            $employee = Employee::find($validated['employee_id']);
+            if ($employee) {
+                $employeeUpdates = ['user_id' => $user->id];
+                if (empty($employee->email) && ! empty($address)) {
+                    $employeeUpdates['email'] = $address;
+                }
+                $employee->update($employeeUpdates);
+            }
         }
 
         $emailSent = false;
@@ -207,7 +256,12 @@ class UserAccessController extends Controller
             }
         }
 
-        $message = "Account created. Username: {$user->username} / temporary password: {$password}.";
+        if ($request->user()->isSuperAdmin()) {
+            $message = "Account created. Username: {$user->username} / temporary password: {$password}.";
+        } else {
+            $message = "Account created for {$user->username}.";
+        }
+
         if ($emailSent) {
             $message .= " Company login credentials and system link have been sent to {$user->otp_email}.";
         } elseif ($mailError) {
@@ -239,7 +293,7 @@ class UserAccessController extends Controller
      */
     public function updateProfile(Request $request, User $user): RedirectResponse
     {
-        Gate::authorize('manageUsers', Setting::class);
+        Gate::authorize('manageAccountRequests', Setting::class);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
@@ -374,6 +428,69 @@ class UserAccessController extends Controller
         );
     }
 
+    /**
+     * Deletes / archives a user account and archives their linked employee profile.
+     */
+    public function destroy(Request $request, User $user): RedirectResponse
+    {
+        Gate::authorize('deleteUser', Setting::class);
+
+        if ($user->id === $request->user()->id) {
+            return back()->with('error', 'You cannot delete your own account.');
+        }
+
+        if ($user->isSuperAdmin() && User::where('role', User::ROLE_SUPER_ADMIN)->count() <= 1) {
+            return back()->with('error', 'The last super administrator account cannot be deleted.');
+        }
+
+        $employeeNumber = null;
+
+        // If user has a linked employee, soft-delete and mark terminated so it leaves the Employee Directory
+        if ($user->employee) {
+            $employee = $user->employee;
+            $employeeNumber = $employee->employee_number;
+
+            $employee->update([
+                'status' => 'inactive',
+                'employment_status' => 'terminated',
+                'date_separated' => now(),
+                'separation_reason' => 'Terminated via User Access control by '.$request->user()->name,
+            ]);
+            $employee->delete();
+        }
+
+        // Revoke all API tokens
+        $user->tokens()->delete();
+
+        $name = $user->name;
+        $username = $user->username;
+
+        $user->update(['is_active' => false]);
+        $user->delete();
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $user->id,
+            'event' => 'account_deleted',
+            'old_values' => [
+                'target_user_id' => $user->id,
+                'target_name' => $name,
+                'target_username' => $username,
+                'linked_employee' => $employeeNumber,
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $message = "Account for {$name} ({$username}) has been archived.";
+        if ($employeeNumber) {
+            $message .= " Associated employee profile ({$employeeNumber}) has been moved to the Archive.";
+        }
+
+        return back()->with('success', $message);
+    }
+
     public function resetPassword(Request $request, User $user): RedirectResponse
     {
         Gate::authorize('manageUsers', Setting::class);
@@ -382,6 +499,7 @@ class UserAccessController extends Controller
 
         $user->update([
             'password' => $password,
+            'visible_password' => Crypt::encryptString($password),
             'must_change_password' => true,
         ]);
         $emailSent = false;
@@ -390,18 +508,140 @@ class UserAccessController extends Controller
                 $user->notify(new AccountProvisioned($password, $user->role));
                 $emailSent = true;
             } catch (\Throwable $e) {
-                Log::error("Failed to email reset credentials to {$user->otp_email}: " . $e->getMessage());
+                Log::error("Failed to email reset credentials to {$user->otp_email}: ".$e->getMessage());
             }
         }
 
-        $message = "New password for {$user->username}: {$password}";
-        if ($emailSent) {
-            $message .= " — emailed to {$user->otp_email}.";
+        if ($request->user()->isSuperAdmin()) {
+            $message = "New password for {$user->username}: {$password}";
+            if ($emailSent) {
+                $message .= " — emailed to {$user->otp_email}.";
+            }
+        } else {
+            $message = "Password has been reset for {$user->username}.";
+            if ($emailSent) {
+                $message .= " New login credentials have been emailed to {$user->otp_email}.";
+            }
         }
 
         return back()->with('success', $message);
     }
 
+    /**
+     * Super Admin approves a staff change request, applying username and/or email changes.
+     */
+    public function approveChangeRequest(Request $request, AccountChangeRequest $accountChangeRequest): RedirectResponse
+    {
+        Gate::authorize('manageAccountRequests', Setting::class);
+
+        if ($accountChangeRequest->status !== AccountChangeRequest::STATUS_PENDING) {
+            return back()->with('error', 'This request has already been processed.');
+        }
+
+        $validated = $request->validate([
+            'admin_notes' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $user = $accountChangeRequest->user;
+        if (! $user) {
+            return back()->with('error', 'The associated user account could not be found.');
+        }
+
+        $oldValues = [
+            'username' => $user->username,
+            'otp_email' => $user->otp_email,
+        ];
+        $newValues = [];
+
+        if (filled($accountChangeRequest->requested_username)) {
+            $username = User::withDomain($accountChangeRequest->requested_username);
+            if (User::where('username', $username)->where('id', '!=', $user->id)->exists()) {
+                return back()->with('error', "The requested username '{$username}' is already taken by another account.");
+            }
+            $user->username = $username;
+            $newValues['username'] = $username;
+        }
+
+        if (filled($accountChangeRequest->requested_email)) {
+            $email = strtolower(trim($accountChangeRequest->requested_email));
+            $user->otp_email = $email;
+            $user->otp_email_verified_at = null;
+            $user->otp_code_hash = null;
+            $user->otp_expires_at = null;
+            $newValues['otp_email'] = $email;
+        }
+
+        $user->save();
+
+        $accountChangeRequest->update([
+            'status' => AccountChangeRequest::STATUS_APPROVED,
+            'decided_by' => $request->user()->id,
+            'decided_at' => now(),
+            'admin_notes' => $validated['admin_notes'] ?? null,
+        ]);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $user->id,
+            'event' => 'account_change_approved',
+            'old_values' => $oldValues,
+            'new_values' => array_merge($newValues, [
+                'request_id' => $accountChangeRequest->id,
+                'staff_notes' => $accountChangeRequest->staff_notes,
+                'admin_notes' => $validated['admin_notes'] ?? null,
+            ]),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return back()->with('success', "Account change request for {$user->name} has been approved and applied.");
+    }
+
+    /**
+     * Super Admin rejects a staff change request with required feedback notes.
+     */
+    public function rejectChangeRequest(Request $request, AccountChangeRequest $accountChangeRequest): RedirectResponse
+    {
+        Gate::authorize('manageAccountRequests', Setting::class);
+
+        if ($accountChangeRequest->status !== AccountChangeRequest::STATUS_PENDING) {
+            return back()->with('error', 'This request has already been processed.');
+        }
+
+        $validated = $request->validate([
+            'admin_notes' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'admin_notes.required' => 'Please provide a reason or note explaining why this request was rejected.',
+            'admin_notes.min' => 'Rejection note must be at least 3 characters.',
+        ]);
+
+        $accountChangeRequest->update([
+            'status' => AccountChangeRequest::STATUS_REJECTED,
+            'decided_by' => $request->user()->id,
+            'decided_at' => now(),
+            'admin_notes' => $validated['admin_notes'],
+        ]);
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $accountChangeRequest->user_id,
+            'event' => 'account_change_rejected',
+            'old_values' => null,
+            'new_values' => [
+                'request_id' => $accountChangeRequest->id,
+                'staff_notes' => $accountChangeRequest->staff_notes,
+                'reason' => $validated['admin_notes'],
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $userName = $accountChangeRequest->user?->name ?? 'Staff';
+
+        return back()->with('success', "Account change request for {$userName} has been rejected.");
+    }
 
     /** @return Collection<int, string> user id => ISO time of their latest sign-in */
     private function lastSignIns()

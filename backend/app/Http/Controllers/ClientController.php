@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\Department;
 use App\Models\Employee;
+use App\Models\Position;
 use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -40,21 +42,20 @@ class ClientController extends Controller
             ->with([
                 /*
                  * Who is on site, so a client card can be opened rather than
-                 * only counted. Eager-loaded in one query: a dozen clients
-                 * fetched one at a time on expand would be a dozen round trips
-                 * for a set the page is about to hold anyway.
+                 * only counted. Eager-loaded in one query.
                  *
-                 * Active only — a client's deployment is who is there now, and
-                 * somebody who has left is a record the archive keeps.
+                 * Active only — a client's deployment is who is there now.
                  */
                 'employees' => fn ($query) => $query
                     ->where('status', 'active')
-                    ->with('position:id,title')
+                    ->with(['position:id,title', 'department:id,name'])
                     ->orderBy('last_name')
                     ->orderBy('first_name')
                     ->select([
                         'id', 'employee_number', 'first_name', 'middle_name',
                         'last_name', 'suffix', 'photo_path', 'position_id', 'client_id',
+                        'department_id', 'employment_status', 'date_hired',
+                        'contract_start', 'contract_end', 'basic_salary', 'wage_region',
                     ]),
             ])
             ->search($search)
@@ -84,65 +85,75 @@ class ClientController extends Controller
                 'active_employees_count' => $client->active_employees_count,
 
                 /*
-                 * A name, a number, a job, a photo — and nothing else.
-                 *
-                 * This is master data behind `manageOrganization`, answering
-                 * "who is on this client's site". It needs no salary, no
-                 * government number and no 201 file, so it carries none. The
-                 * same narrowing `DirectoryController::card()` makes, for the
-                 * same reason: what keeps a screen safe is the field list.
+                 * Profile, contract, salary rate, and deployment details.
                  */
-                'employees' => $client->employees->map(fn (Employee $employee) => [
-                    'id' => $employee->id,
-                    'employee_number' => $employee->employee_number,
-                    'full_name' => $employee->full_name,
-                    'position' => $employee->position?->title,
-                    'photo_url' => $employee->photo_path
-                        ? asset('storage/'.$employee->photo_path)
-                        : null,
-                ]),
+                'employees' => $client->employees->map(function (Employee $employee) use ($regions, $client) {
+                    $regionKey = $employee->wage_region ?: $client->wage_region;
+                    $dailyFloor = $regions[$regionKey]['daily_minimum'] ?? null;
+                    $salary = (float) $employee->basic_salary;
+                    $dailyEquivalent = $salary > 0 ? round($salary / 26, 2) : 0;
+
+                    return [
+                        'id' => $employee->id,
+                        'employee_number' => $employee->employee_number,
+                        'full_name' => $employee->full_name,
+                        'position_id' => $employee->position_id,
+                        'position' => $employee->position?->title,
+                        'department_id' => $employee->department_id,
+                        'department' => $employee->department?->name,
+                        'employment_status' => $employee->employment_status,
+                        'contract_start' => $employee->contract_start?->toDateString() ?? $employee->date_hired?->toDateString(),
+                        'contract_end' => $employee->contract_end?->toDateString(),
+                        'contract_lapsed' => $employee->contractHasLapsed(),
+                        'contract_expiring_soon' => $employee->contractExpiringSoon(),
+                        'basic_salary' => $salary,
+                        'daily_equivalent' => $dailyEquivalent,
+                        'daily_minimum_floor' => $dailyFloor,
+                        'is_wage_compliant' => $dailyFloor ? ($dailyEquivalent >= $dailyFloor) : true,
+                        'wage_region' => $regionKey,
+                        'wage_region_label' => $regions[$regionKey]['label'] ?? $regionKey,
+                        'photo_url' => $employee->photo_path
+                            ? asset('storage/'.$employee->photo_path)
+                            : null,
+                    ];
+                }),
             ]),
             /*
-             * Who can be sent somewhere, for the deploy picker.
-             *
-             * The whole active roster rather than only internal staff: moving
-             * somebody between clients is the commoner act, and a list that
-             * offered only the undeployed would answer the rarer half of the
-             * question. Their current posting rides along so the picker can
-             * say what the move is *from* — sending a driver who is already on
-             * another client's site is a decision, not a fill-in.
-             *
-             * The same four fields the cards carry, and for the same reason:
-             * this is master data, so it holds no salary and no 201 file.
+             * Who can be sent somewhere, with their profiling details.
              */
             'deployable' => Employee::query()
                 ->where('status', 'active')
-                // Eager-loaded rather than read per row: the picker holds the
-                // whole roster, so a lazy relation here is forty queries to
-                // draw one list.
                 ->with(['client:id,name', 'position:id,title', 'department:id,name'])
                 ->orderBy('last_name')
                 ->orderBy('first_name')
                 ->get([
                     'id', 'employee_number', 'first_name', 'middle_name', 'last_name',
                     'suffix', 'client_id', 'position_id', 'department_id',
+                    'employment_status', 'basic_salary', 'wage_region',
+                    'contract_start', 'contract_end', 'date_hired',
                 ])
                 ->map(fn (Employee $employee) => [
                     'id' => $employee->id,
                     'employee_number' => $employee->employee_number,
                     'full_name' => $employee->full_name,
-                    /*
-                     * The job is the whole basis of the decision — a client
-                     * asking for drivers is not asking for whoever is free,
-                     * and a picker that showed only names made "can this
-                     * person do it" a question you had to leave the screen to
-                     * answer.
-                     */
+                    'position_id' => $employee->position_id,
                     'position' => $employee->position?->title,
+                    'department_id' => $employee->department_id,
                     'department' => $employee->department?->name,
                     'client_id' => $employee->client_id,
                     'client_name' => $employee->client?->name,
+                    'employment_status' => $employee->employment_status,
+                    'basic_salary' => (float) $employee->basic_salary,
+                    'wage_region' => $employee->wage_region,
+                    'contract_start' => $employee->contract_start?->toDateString() ?? $employee->date_hired?->toDateString(),
+                    'contract_end' => $employee->contract_end?->toDateString(),
                 ]),
+            'positions' => Position::orderBy('title')->get(['id', 'title', 'department_id']),
+            'departments' => Department::orderBy('name')->get(['id', 'name']),
+            'employmentStatuses' => collect(Employee::EMPLOYMENT_STATUSES)->map(fn ($s) => [
+                'value' => $s,
+                'label' => ucwords(str_replace(['_', '-'], ' ', $s)),
+            ])->values(),
             'filters' => ['search' => $search],
             'wageRegions' => $regions
                 ->map(fn (array $region, string $key) => [

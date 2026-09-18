@@ -80,21 +80,18 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                     value={summary.total}
                     icon={CalendarDays}
                     tone={summary.total > 0 ? 'primary' : 'warning'}
-                    hint="read by attendance, leave and payroll"
                 />
                 <StatCard
                     label="Regular"
                     value={summary.regular}
                     icon={CalendarDays}
                     tone={summary.regular > 0 ? 'info' : 'muted'}
-                    hint="200% when worked"
                 />
                 <StatCard
                     label="Special non-working"
                     value={summary.special}
                     icon={CalendarDays}
                     tone={summary.special > 0 ? 'info' : 'muted'}
-                    hint="130% when worked"
                 />
             </div>
 
@@ -105,11 +102,6 @@ export default function Holidays({ holidays, filters, years, summary, nextYear, 
                         <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-foreground">
                                 No holidays recorded for {nextYear.year} yet
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                Leave spanning {nextYear.year} would be charged for holidays as
-                                if they were working days, and nobody working one would get the
-                                premium.
                             </p>
                         </div>
                         <Button

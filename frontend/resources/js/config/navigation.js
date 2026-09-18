@@ -1,4 +1,5 @@
 import {
+    Archive,
     BadgeCheck,
     Banknote,
     Bell,
@@ -22,6 +23,7 @@ import {
     LayoutDashboard,
     ListChecks,
     Lock,
+    MonitorSmartphone,
     Network,
     Palette,
     Plug,
@@ -104,13 +106,39 @@ export const NAV_GROUPS = [
                         icon: Users,
                         href: '/hr/employees',
                     },
+                    /*
+                     * Departments and Positions, each with its own row again,
+                     * asked for by the owner.
+                     *
+                     * They had been folded into one entry labelled
+                     * `Organization Chart` pointing at `/hr/departments`, with
+                     * `activePrefixes` covering Positions so the single row
+                     * lit for both. That saved a row and cost the thing a
+                     * sidebar is for: **Positions had no link anywhere**, so
+                     * the only way to it was to open Departments and find the
+                     * way across. One entry cannot be the door to two screens.
+                     *
+                     * They are two screens rather than one for a reason the
+                     * merged label hid: a department is where somebody is
+                     * filed, a position is what they are paid to do, and
+                     * Payroll checks a new rate against the *position's*
+                     * salary band. Both are master data behind
+                     * `manageOrganization`, which is why both carry the same
+                     * two roles.
+                     */
                     {
-                        id: 'employee-departments-positions',
-                        label: 'Organization Chart',
+                        id: 'employee-departments',
+                        label: 'Departments',
                         icon: Network,
                         href: '/hr/departments',
                         roles: ['admin', 'hr_staff'],
-                        activePrefixes: ['/hr/departments', '/hr/positions', '/hr/directory'],
+                    },
+                    {
+                        id: 'employee-positions',
+                        label: 'Positions',
+                        icon: Briefcase,
+                        href: '/hr/positions',
+                        roles: ['admin', 'hr_staff'],
                     },
                     /*
                      * Clients, back where Positions leaves off.
@@ -172,11 +200,17 @@ export const NAV_GROUPS = [
                         icon: BadgeCheck,
                         href: '/hr/deployment',
                     },
+                    {
+                        id: 'employee-archive',
+                        label: 'Archive',
+                        icon: Archive,
+                        href: '/hr/archive',
+                        roles: ['admin', 'hr_staff'],
+                    },
                 ],
             },
         ],
     },
-
 
     {
         label: 'Time & Attendance',
@@ -452,6 +486,33 @@ export const NAV_GROUPS = [
                 roles: ['admin', 'hr_staff'],
             },
             {
+                id: 'archive-module',
+                label: 'Archive Module',
+                icon: Archive,
+                href: '/hr/archive',
+                roles: ['admin', 'hr_staff'],
+            },
+            {
+                /*
+                 * Who is signed in right now, and how to sign them out.
+                 *
+                 * `roles: ['super_admin']` is the narrowest entry in this
+                 * file, and the only one an Administrator does not see: the
+                 * list is every signed-in person's address and device, which
+                 * is a map of the workforce's whereabouts nothing else here
+                 * hands over — and ending somebody's session is an incident
+                 * response rather than an HR task. `visibleGroups()` lets a
+                 * super administrator through everything, and for an admin
+                 * neither the `admin` shortcut nor their own role matches, so
+                 * it drops out for them.
+                 */
+                id: 'sessions',
+                label: 'Active Sessions',
+                icon: MonitorSmartphone,
+                href: '/settings/sessions',
+                roles: ['super_admin'],
+            },
+            {
                 id: 'system-settings',
                 label: 'System Settings',
                 icon: Settings,
@@ -536,7 +597,10 @@ export function isItemActive(item, currentUrl) {
         return owner === null || owner === item.href;
     }
 
-    if (item.activePrefixes && item.activePrefixes.some((prefix) => pathOf(currentUrl).startsWith(prefix))) {
+    if (
+        item.activePrefixes &&
+        item.activePrefixes.some((prefix) => pathOf(currentUrl).startsWith(prefix))
+    ) {
         const owner = bestMatch(currentUrl);
 
         return owner === null || owner === item.href || item.activePrefixes.includes(owner);
@@ -552,7 +616,15 @@ export function isItemActive(item, currentUrl) {
  * that silently loses its label for one role is the bug this guards against.
  */
 export function visibleGroups(groups, role) {
-    const allowed = (entry) => !entry.roles || entry.roles.includes(role);
+    const isSuperAdmin = role === 'super_admin';
+    const isAdmin = isSuperAdmin || role === 'admin';
+
+    const allowed = (entry) => {
+        if (!entry.roles) return true;
+        if (isSuperAdmin) return true;
+        if (entry.roles.includes('admin') && isAdmin) return true;
+        return entry.roles.includes(role);
+    };
 
     return groups
         .map((group) => ({

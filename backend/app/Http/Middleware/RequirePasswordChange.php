@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ImpersonationService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,6 +34,7 @@ class RequirePasswordChange
     private const ALLOWED = [
         'settings.security',
         'settings.security.password',
+        'settings.impersonate.stop',
         'otp.challenge',
         'otp.verify',
         'otp.resend',
@@ -40,9 +42,21 @@ class RequirePasswordChange
         'logout.idle',
     ];
 
-
     public function handle(Request $request, Closure $next): Response
     {
+        /*
+         * An impersonated session is not held on password rotation.
+         *
+         * Rotating the password is the account holder's job, not an
+         * administrator's support task — and `BlockWhileImpersonating` closes
+         * the password update route anyway, so holding an administrator here
+         * would trap them: they cannot change the password and, without
+         * stepping aside, could not reach `settings.impersonate.stop` either.
+         */
+        if (session(ImpersonationService::SESSION_KEY) !== null) {
+            return $next($request);
+        }
+
         $user = $request->user();
 
         if (! $user?->must_change_password || $request->routeIs(self::ALLOWED)) {

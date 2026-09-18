@@ -7,6 +7,7 @@ import ThemeToggle from '@/Components/layout/ThemeToggle';
 import { cn, initials } from '@/lib/utils';
 
 const ROLE_LABELS = {
+    super_admin: 'Super Administrator',
     admin: 'Administrator',
     hr_staff: 'HR Staff',
     supervisor: 'Supervisor',

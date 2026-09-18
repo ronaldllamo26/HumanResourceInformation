@@ -63,19 +63,25 @@ class ScanAccuracyController extends Controller
     }
 
     /**
-     * Defaults to the last ninety days.
+     * Defaults to the window in `scanner.accuracy.default_days` — ninety days.
      *
      * Wider than the month the other screens use, deliberately: this is a
      * measurement, and a measurement wants a sample. A month of a small
      * agency's uploads is a handful of scans, and a rate over a handful is
      * noise being reported as a finding.
      *
+     * **Read from config rather than written here**, because the dashboard's
+     * scanner card reports the same figures and a second copy of the number
+     * would put two different clean rates for one scanner on two screens, with
+     * nothing on either saying they were measured over different months.
+     *
      * @return array{0: Carbon, 1: Carbon}
      */
     private function range(Request $request): array
     {
         $to = $request->date('to') ?? Carbon::today();
-        $from = $request->date('from') ?? $to->copy()->subDays(90);
+        $from = $request->date('from')
+            ?? $to->copy()->subDays((int) config('scanner.accuracy.default_days', 90));
 
         return $from->greaterThan($to) ? [$to, $from] : [$from, $to];
     }

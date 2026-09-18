@@ -149,11 +149,6 @@ export default function Appearance({ brand }) {
                             </p>
                         </div>
                     </div>
-
-                    <p className="mt-3 text-xs text-muted-foreground">
-                        Change the name and tagline under{' '}
-                        <span className="font-medium text-foreground">General</span>.
-                    </p>
                 </CardBody>
             </Card>
         </SettingsLayout>

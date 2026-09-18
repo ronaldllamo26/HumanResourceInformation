@@ -5,8 +5,10 @@ namespace App\Http\Middleware;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeeEndorsement;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\CredentialExpiryScanner;
 use App\Services\EmployeeService;
+use App\Services\ImpersonationService;
 use App\Services\LeaveService;
 use App\Services\NotificationFeed;
 use Illuminate\Http\Request;
@@ -44,6 +46,33 @@ class HandleInertiaRequests extends Middleware
                     'id', 'name', 'email', 'role', 'is_active',
                 ]),
             ],
+            /*
+             * The banner an impersonated session carries on every screen.
+             *
+             * Shared here rather than passed by the controllers because an
+             * impersonation outlives the request that started it and reaches
+             * every page after it — and the one failure mode this feature
+             * cannot afford is an administrator who has forgotten whose
+             * screen they are on and takes an action believing it is their
+             * own. A banner on one page would not prevent that; on all of
+             * them it is unmissable.
+             *
+             * Null for every ordinary session, so the component draws nothing.
+             */
+            'impersonation' => function () use ($request) {
+                $administratorId = $request->session()->get(ImpersonationService::SESSION_KEY);
+
+                if ($administratorId === null) {
+                    return null;
+                }
+
+                return [
+                    // The name the session is wearing, and the name behind it.
+                    'as' => $request->user()?->name,
+                    'administrator' => User::find($administratorId)?->name,
+                    'started_at' => $request->session()->get(ImpersonationService::STARTED_AT_KEY),
+                ];
+            },
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

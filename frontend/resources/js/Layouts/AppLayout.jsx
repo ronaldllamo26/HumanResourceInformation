@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '@/Components/layout/Sidebar';
 import Topbar from '@/Components/layout/Topbar';
 import IdleTimeout from '@/Components/layout/IdleTimeout';
+import ImpersonationBanner from '@/Components/layout/ImpersonationBanner';
 import Toast from '@/Components/ui/Toast';
 import { cn } from '@/lib/utils';
 
@@ -41,12 +42,33 @@ export default function AppLayout({ title, breadcrumbs, actions, children }) {
                 onCloseMobile={() => setMobileOpen(false)}
             />
 
+            {/* Above the content well, inside the shifted column, so it
+                spans the page rather than sitting under the sidebar. */}
             <div
                 className={cn(
-                    'flex min-h-screen flex-col transition-all duration-300',
+                    /*
+                     * No transition, and it belongs with the sidebar's.
+                     *
+                     * This 300ms ease existed for exactly one thing: sliding
+                     * the content pane across when the rail collapses. With
+                     * the sidebar's own transition gone, an easing content
+                     * column would part company from a snapping sidebar and
+                     * leave a visible gap between them for those 300ms — the
+                     * two halves of one gesture disagreeing about whether it
+                     * is animated, which is the same reason the mobile scrim
+                     * lost its fade.
+                     */
+                    'flex min-h-screen flex-col',
                     collapsed ? 'lg:pl-sidebar-collapsed' : 'lg:pl-sidebar',
                 )}
             >
+                {/*
+                 * Above the topbar, inside the column the sidebar has already
+                 * shifted — so it spans the content rather than running under
+                 * the sidebar, and nothing scrolls past it.
+                 */}
+                <ImpersonationBanner />
+
                 <Topbar
                     title={title}
                     breadcrumbs={breadcrumbs}

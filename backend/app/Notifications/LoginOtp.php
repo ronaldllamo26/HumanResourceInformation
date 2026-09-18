@@ -33,7 +33,13 @@ class LoginOtp extends Notification
         $minutes = max(1, (int) ceil($this->ttlSeconds / 60));
         $timeLabel = $minutes === 1 ? '1 minute (60 seconds)' : "{$minutes} minutes ({$this->ttlSeconds} seconds)";
 
+        $fromAddress = config('mail.from.address') ?: 'gavegavebenavidez@gmail.com';
+        $fromName = config('mail.from.name') ?: 'PrimePower Manpower HRIS';
+        $mailer = config('mail.default', 'smtp');
+
         return (new MailMessage)
+            ->mailer($mailer)
+            ->from($fromAddress, $fromName)
             ->subject("Your PrimePower sign-in code is {$this->code}")
             ->greeting('PrimePower Sign-in Verification')
             ->line('Your one-time 6-digit sign-in code is:')

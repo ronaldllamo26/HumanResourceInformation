@@ -58,7 +58,6 @@ class ForcedPasswordChangeTest extends TestCase
         $this->actingAs($user)->get(route('otp.challenge'))->assertOk();
     }
 
-
     /**
      * Trapping someone in a session they cannot leave is worse than the risk
      * being managed — signing out reduces exposure rather than adding to it.

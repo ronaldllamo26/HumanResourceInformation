@@ -77,9 +77,11 @@ export default function Deployment({
     };
 
     // Drill helper
-    const drillTo = (changes) => withFilters('/hr/deployment', { ...filters, tab: currentTab }, changes, ['status']);
+    const drillTo = (changes) =>
+        withFilters('/hr/deployment', { ...filters, tab: currentTab }, changes, ['status']);
 
-    const readyRate = (summary?.total || 0) > 0 ? ((summary.ready || 0) / summary.total) * 100 : 0;
+    const readyRate =
+        (summary?.total || 0) > 0 ? ((summary.ready || 0) / summary.total) * 100 : 0;
     const blockingOnboardingRate =
         (onboardingSummary?.incomplete || 0) > 0
             ? ((onboardingSummary.blocking || 0) / onboardingSummary.incomplete) * 100
@@ -129,12 +131,8 @@ export default function Deployment({
                         <h2 className="text-xl font-semibold tracking-tight text-foreground">
                             Checks &amp; Readiness Hub
                         </h2>
-                        <p className="text-xs text-muted-foreground">
-                            Consolidated monitor for deployment readiness, 201 file status, and credentials &amp; licenses.
-                        </p>
                     </div>
                 </div>
-
 
                 {/* Tabs bar */}
                 <div className="flex flex-wrap gap-2 border-b border-border pb-1">
@@ -150,11 +148,16 @@ export default function Deployment({
                                 className={cn(
                                     'flex items-center gap-2 rounded-t-lg border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
                                     isActive
-                                        ? 'border-primary bg-primary/5 text-primary shadow-xs'
+                                        ? 'shadow-xs border-primary bg-primary/5 text-primary'
                                         : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground',
                                 )}
                             >
-                                <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')} />
+                                <Icon
+                                    className={cn(
+                                        'h-4 w-4 shrink-0',
+                                        isActive ? 'text-primary' : 'text-muted-foreground',
+                                    )}
+                                />
                                 <span>{tab.label}</span>
                                 {tab.count && (
                                     <span
@@ -186,7 +189,6 @@ export default function Deployment({
                             icon={CircleCheck}
                             tone={readyRate >= 80 ? 'success' : 'warning'}
                             iconTone="success"
-                            hint={`of ${summary.total || 0} on the books`}
                             href={drillTo({ status: 'ready' })}
                         />
 
@@ -195,7 +197,6 @@ export default function Deployment({
                             value={summary.warning || 0}
                             icon={TriangleAlert}
                             tone={(summary.warning || 0) > 0 ? 'warning' : 'muted'}
-                            hint="deployable, but something is due soon"
                             href={drillTo({ status: 'warning' })}
                         />
 
@@ -204,7 +205,6 @@ export default function Deployment({
                             value={summary.blocked || 0}
                             icon={CircleSlash}
                             tone={(summary.blocked || 0) > 0 ? 'destructive' : 'muted'}
-                            hint="lapsed credential or incomplete file"
                             href={drillTo({ status: 'blocked' })}
                         />
 
@@ -213,7 +213,6 @@ export default function Deployment({
                             value={clients.length}
                             icon={ShieldCheck}
                             tone={clients.length > 0 ? 'primary' : 'muted'}
-                            hint="deployment partner sites"
                             href="/hr/clients"
                         />
                     </div>
@@ -277,7 +276,9 @@ export default function Deployment({
                                     />
                                 ) : (
                                     rows.map((row) => {
-                                        const status = DEPLOYMENT_STATUS[row.status] ?? DEPLOYMENT_STATUS.warning;
+                                        const status =
+                                            DEPLOYMENT_STATUS[row.status] ??
+                                            DEPLOYMENT_STATUS.warning;
 
                                         return (
                                             <TR key={row.employee_id}>
@@ -313,22 +314,25 @@ export default function Deployment({
                                                 <TD>
                                                     {row.reasons.length === 0 ? (
                                                         <span className="text-sm text-muted-foreground">
-                                                            Credentials current, 201 file complete.
+                                                            Credentials current, 201 file
+                                                            complete.
                                                         </span>
                                                     ) : (
                                                         <ul className="space-y-1">
-                                                            {row.reasons.map((reason, index) => (
-                                                                <li
-                                                                    key={index}
-                                                                    className={
-                                                                        reason.blocking
-                                                                            ? 'text-xs font-medium text-destructive'
-                                                                            : 'text-xs text-muted-foreground'
-                                                                    }
-                                                                >
-                                                                    {reason.detail}
-                                                                </li>
-                                                            ))}
+                                                            {row.reasons.map(
+                                                                (reason, index) => (
+                                                                    <li
+                                                                        key={index}
+                                                                        className={
+                                                                            reason.blocking
+                                                                                ? 'text-xs font-medium text-destructive'
+                                                                                : 'text-xs text-muted-foreground'
+                                                                        }
+                                                                    >
+                                                                        {reason.detail}
+                                                                    </li>
+                                                                ),
+                                                            )}
                                                         </ul>
                                                     )}
                                                 </TD>
@@ -339,12 +343,6 @@ export default function Deployment({
                             </TBody>
                         </Table>
                     </Card>
-
-                    <p className="text-xs text-muted-foreground">
-                        A lapsed licence or an incomplete 201 file blocks deployment because dispatching
-                        anyway is the company&rsquo;s liability. Anything inside its renewal window is reported
-                        as a warning so HR can take action before it expires.
-                    </p>
                 </div>
             )}
 
@@ -357,7 +355,6 @@ export default function Deployment({
                             value={onboardingSummary.incomplete || 0}
                             icon={Users}
                             tone={(onboardingSummary.incomplete || 0) > 0 ? 'warning' : 'muted'}
-                            hint="missing at least one requirement"
                         />
 
                         <MeterCard
@@ -371,8 +368,9 @@ export default function Deployment({
                             }
                             icon={OctagonAlert}
                             tone="destructive"
-                            iconTone={(onboardingSummary.blocking || 0) > 0 ? 'destructive' : 'muted'}
-                            hint={`of ${onboardingSummary.incomplete || 0} incomplete files`}
+                            iconTone={
+                                (onboardingSummary.blocking || 0) > 0 ? 'destructive' : 'muted'
+                            }
                             href={drillTo({ blocking: filters.blocking ? undefined : '1' })}
                         />
 
@@ -380,16 +378,20 @@ export default function Deployment({
                             label="Missing Documents"
                             value={onboardingSummary.missing_documents || 0}
                             icon={FileWarning}
-                            tone={(onboardingSummary.missing_documents || 0) > 0 ? 'warning' : 'muted'}
-                            hint="contracts, IDs, clearances"
+                            tone={
+                                (onboardingSummary.missing_documents || 0) > 0
+                                    ? 'warning'
+                                    : 'muted'
+                            }
                         />
 
                         <StatCard
                             label="Missing Gov’t Numbers"
                             value={onboardingSummary.missing_numbers || 0}
                             icon={IdCard}
-                            tone={(onboardingSummary.missing_numbers || 0) > 0 ? 'info' : 'muted'}
-                            hint="TIN, SSS, PhilHealth, Pag-IBIG"
+                            tone={
+                                (onboardingSummary.missing_numbers || 0) > 0 ? 'info' : 'muted'
+                            }
                         />
                     </div>
 
@@ -407,7 +409,9 @@ export default function Deployment({
                             <div className="flex flex-1 flex-wrap items-center gap-2 lg:justify-end">
                                 <Select
                                     value={filters.department_id ?? ''}
-                                    onChange={(event) => apply('department_id', event.target.value)}
+                                    onChange={(event) =>
+                                        apply('department_id', event.target.value)
+                                    }
                                     placeholder="All departments"
                                     className="w-full sm:w-56"
                                     aria-label="Filter by department"
@@ -419,15 +423,19 @@ export default function Deployment({
 
                                 <button
                                     type="button"
-                                    onClick={() => apply('blocking', filters.blocking ? undefined : '1')}
+                                    onClick={() =>
+                                        apply('blocking', filters.blocking ? undefined : '1')
+                                    }
                                     className={cn(
-                                        'rounded-md px-3 py-1.5 text-xs font-medium transition-colors border',
+                                        'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors',
                                         filters.blocking
-                                            ? 'bg-destructive/10 border-destructive/30 text-destructive font-semibold'
+                                            ? 'border-destructive/30 bg-destructive/10 font-semibold text-destructive'
                                             : 'border-border text-muted-foreground hover:bg-muted',
                                     )}
                                 >
-                                    {filters.blocking ? 'Showing Blocking Only' : 'Filter Blocking'}
+                                    {filters.blocking
+                                        ? 'Showing Blocking Only'
+                                        : 'Filter Blocking'}
                                 </button>
                             </div>
                         </div>
@@ -473,7 +481,9 @@ export default function Deployment({
                                             </TD>
 
                                             <TD className="text-sm">
-                                                <p className="text-foreground">{item.department || '—'}</p>
+                                                <p className="text-foreground">
+                                                    {item.department || '—'}
+                                                </p>
                                                 {item.position && (
                                                     <p className="text-xs text-muted-foreground">
                                                         {item.position}
@@ -487,14 +497,18 @@ export default function Deployment({
                                                         <span
                                                             key={idx}
                                                             className={cn(
-                                                                'rounded-full px-2 py-0.5 text-[11px] font-medium border',
+                                                                'rounded-full border px-2 py-0.5 text-[11px] font-medium',
                                                                 req.blocking
-                                                                    ? 'bg-destructive/10 border-destructive/20 text-destructive'
+                                                                    ? 'border-destructive/20 bg-destructive/10 text-destructive'
                                                                     : req.kind === 'document'
-                                                                    ? 'bg-warning/10 border-warning/20 text-warning'
-                                                                    : 'bg-muted border-border text-muted-foreground',
+                                                                      ? 'border-warning/20 bg-warning/10 text-warning'
+                                                                      : 'border-border bg-muted text-muted-foreground',
                                                             )}
-                                                            title={req.blocking ? 'Mandatory for deployment' : 'Record keeping'}
+                                                            title={
+                                                                req.blocking
+                                                                    ? 'Mandatory for deployment'
+                                                                    : 'Record keeping'
+                                                            }
                                                         >
                                                             {req.label}
                                                         </span>
@@ -508,9 +522,7 @@ export default function Deployment({
                                                         Stops Deployment ({item.blocking})
                                                     </Badge>
                                                 ) : (
-                                                    <Badge variant="muted">
-                                                        File Notice
-                                                    </Badge>
+                                                    <Badge variant="muted">File Notice</Badge>
                                                 )}
                                             </TD>
                                         </TR>
@@ -531,7 +543,6 @@ export default function Deployment({
                             value={credentialsSummary.total || 0}
                             icon={CalendarClock}
                             tone={(credentialsSummary.total || 0) > 0 ? 'warning' : 'muted'}
-                            hint="lapsed or inside renewal window"
                         />
 
                         <MeterCard
@@ -545,8 +556,9 @@ export default function Deployment({
                             }
                             icon={ShieldX}
                             tone="destructive"
-                            iconTone={(credentialsSummary.expired || 0) > 0 ? 'destructive' : 'muted'}
-                            hint={`of ${credentialsSummary.total || 0} requiring attention`}
+                            iconTone={
+                                (credentialsSummary.expired || 0) > 0 ? 'destructive' : 'muted'
+                            }
                             href={drillTo({ cred_status: 'expired' })}
                         />
 
@@ -554,8 +566,9 @@ export default function Deployment({
                             label="Stops Work / Deployment"
                             value={credentialsSummary.blocking || 0}
                             icon={OctagonAlert}
-                            tone={(credentialsSummary.blocking || 0) > 0 ? 'destructive' : 'muted'}
-                            hint="driver licenses, safety certificates"
+                            tone={
+                                (credentialsSummary.blocking || 0) > 0 ? 'destructive' : 'muted'
+                            }
                             href={drillTo({ blocking: filters.blocking ? undefined : '1' })}
                         />
 
@@ -564,7 +577,6 @@ export default function Deployment({
                             value={credentialsSummary.expiring || 0}
                             icon={CalendarClock}
                             tone={(credentialsSummary.expiring || 0) > 0 ? 'warning' : 'muted'}
-                            hint="inside renewal advance window"
                             href={drillTo({ cred_status: 'expiring' })}
                         />
                     </div>
@@ -583,7 +595,9 @@ export default function Deployment({
                             <div className="flex flex-1 flex-wrap items-center gap-2 lg:justify-end">
                                 <Select
                                     value={filters.cred_status ?? ''}
-                                    onChange={(event) => apply('cred_status', event.target.value)}
+                                    onChange={(event) =>
+                                        apply('cred_status', event.target.value)
+                                    }
                                     placeholder="All expiry statuses"
                                     className="w-full sm:w-44"
                                     aria-label="Filter by status"
@@ -604,7 +618,9 @@ export default function Deployment({
 
                                 <Select
                                     value={filters.department_id ?? ''}
-                                    onChange={(event) => apply('department_id', event.target.value)}
+                                    onChange={(event) =>
+                                        apply('department_id', event.target.value)
+                                    }
                                     placeholder="All departments"
                                     className="w-full sm:w-52"
                                     aria-label="Filter by department"
@@ -688,9 +704,7 @@ export default function Deployment({
                                                         Stops Work
                                                     </Badge>
                                                 ) : (
-                                                    <Badge variant="muted">
-                                                        Informational
-                                                    </Badge>
+                                                    <Badge variant="muted">Informational</Badge>
                                                 )}
                                             </TD>
                                         </TR>

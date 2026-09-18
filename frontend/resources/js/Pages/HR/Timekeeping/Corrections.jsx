@@ -82,7 +82,6 @@ export default function Corrections({ corrections, filters, summary, can }) {
                     value={summary.pending}
                     icon={Hourglass}
                     tone={summary.pending > 0 ? 'warning' : 'muted'}
-                    hint="the record stays as it is until then"
                     href={withFilters('/hr/timekeeping/corrections', filters, {
                         status: 'pending',
                     })}
@@ -92,7 +91,6 @@ export default function Corrections({ corrections, filters, summary, can }) {
                     value={summary.approved}
                     icon={CircleCheck}
                     tone={summary.approved > 0 ? 'success' : 'muted'}
-                    hint="applied to the time record"
                     href={withFilters('/hr/timekeeping/corrections', filters, {
                         status: 'approved',
                     })}
@@ -334,10 +332,6 @@ export default function Corrections({ corrections, filters, summary, can }) {
                             <Punches timeIn={deciding.time_in} timeOut={deciding.time_out} />
                         </p>
                         <p className="text-muted-foreground">{deciding.reason}</p>
-                        <p className="pt-1 text-xs text-muted-foreground">
-                            Approving rewrites the day and recomputes it against the employee's
-                            shift.
-                        </p>
                     </div>
                 )}
             </DecisionModal>

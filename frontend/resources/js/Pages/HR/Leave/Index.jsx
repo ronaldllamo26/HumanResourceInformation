@@ -164,7 +164,6 @@ export default function Index({
                     value={summary.total}
                     icon={CalendarDays}
                     tone="primary"
-                    hint="filed in this range"
                     href={drillTo({})}
                 />
 
@@ -176,7 +175,6 @@ export default function Index({
                     value={summary.pending}
                     icon={Hourglass}
                     tone={summary.pending > 0 ? 'warning' : 'muted'}
-                    hint={summary.pending > 0 ? 'waiting on a decision' : 'nothing waiting'}
                     /* `awaiting`, not `status=pending`: the tile counts rows
                        left mid-workflow too. */
                     href={drillTo({ awaiting: '1' })}
@@ -190,7 +188,6 @@ export default function Index({
                     icon={CheckCircle2}
                     tone="success"
                     iconTone="success"
-                    hint={`of ${summary.total} filed`}
                     href={drillTo({ status: 'approved' })}
                 />
 
@@ -201,7 +198,6 @@ export default function Index({
                     value={summary.approved_days}
                     icon={CalendarCheck}
                     tone={summary.approved_days > 0 ? 'info' : 'muted'}
-                    hint="deducted from credits"
                     href={drillTo({ status: 'approved' })}
                 />
             </div>
@@ -615,11 +611,6 @@ export default function Index({
                         — {decision?.request.days_requested} day(s) of{' '}
                         {decision?.request.leave_type?.name} from{' '}
                         {formatDate(decision?.request.start_date)}.
-                        {decision?.action === 'approve' && (
-                            <span className="mt-1 block">
-                                Approving deducts the credits from their balance.
-                            </span>
-                        )}
                     </p>
 
                     <Field

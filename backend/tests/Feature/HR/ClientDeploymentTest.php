@@ -3,8 +3,10 @@
 namespace Tests\Feature\HR;
 
 use App\Models\Client;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeEndorsement;
+use App\Models\Position;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -329,7 +331,74 @@ class ClientDeploymentTest extends TestCase
             );
     }
 
-    // --- Payroll grouping --------------------------------------------------
+    public function test_deploying_can_record_contract_dates_position_and_salary_rate(): void
+    {
+        $client = $this->client(['wage_region' => 'NCR']);
+        $dept = Department::create(['code' => 'OPS', 'name' => 'Operations']);
+        $position = Position::create(['department_id' => $dept->id, 'code' => 'DRV', 'title' => 'Delivery Driver']);
+
+        $employee = Employee::factory()->create([
+            'employment_category' => Employee::CATEGORY_INTERNAL,
+            'client_id' => null,
+            'basic_salary' => 18000,
+        ]);
+
+        $this->actingAs($this->hr())
+            ->patch("/hr/employees/{$employee->id}/deployment", [
+                'client_id' => $client->id,
+                'position_id' => $position->id,
+                'employment_status' => 'contractual',
+                'contract_start' => '2026-10-01',
+                'contract_end' => '2027-03-31',
+                'basic_salary' => 22000,
+                'wage_region' => 'NCR',
+                'notes' => 'Contract deployment for Q4 project.',
+            ])
+            ->assertRedirect();
+
+        $employee->refresh();
+
+        $this->assertSame($client->id, $employee->client_id);
+        $this->assertSame(Employee::CATEGORY_EXTERNAL, $employee->employment_category);
+        $this->assertSame($position->id, $employee->position_id);
+        $this->assertSame('contractual', $employee->employment_status);
+        $this->assertSame('2026-10-01', $employee->contract_start?->format('Y-m-d'));
+        $this->assertSame('2027-03-31', $employee->contract_end?->format('Y-m-d'));
+        $this->assertEquals(22000, (float) $employee->basic_salary);
+        $this->assertSame('NCR', $employee->wage_region);
+        $this->assertSame('Contract deployment for Q4 project.', $employee->notes);
+    }
+
+    public function test_the_clients_screen_carries_onboarding_and_profiling_data(): void
+    {
+        $client = $this->client(['wage_region' => 'NCR']);
+        $dept = Department::create(['code' => 'OPS', 'name' => 'Operations']);
+        $position = Position::create(['department_id' => $dept->id, 'code' => 'DRV', 'title' => 'Driver']);
+
+        $employee = Employee::factory()->create([
+            'employment_category' => Employee::CATEGORY_EXTERNAL,
+            'client_id' => $client->id,
+            'position_id' => $position->id,
+            'department_id' => $dept->id,
+            'employment_status' => 'contractual',
+            'contract_start' => '2026-01-01',
+            'contract_end' => '2026-12-31',
+            'basic_salary' => 20000,
+        ]);
+
+        $this->actingAs($this->hr())
+            ->get('/hr/clients')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('positions')
+                ->has('departments')
+                ->has('employmentStatuses')
+                ->where('clients.0.employees.0.id', $employee->id)
+                ->where('clients.0.employees.0.contract_start', '2026-01-01')
+                ->where('clients.0.employees.0.contract_end', '2026-12-31')
+                ->where('clients.0.employees.0.is_wage_compliant', true),
+            );
+    }
 
     /** @return array<string, mixed> */
     private function payload(array $overrides = []): array

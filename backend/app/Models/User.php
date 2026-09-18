@@ -4,16 +4,21 @@ namespace App\Models;
 
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+
+    public const ROLE_SUPER_ADMIN = 'super_admin';
 
     public const ROLE_ADMIN = 'admin';
 
@@ -27,6 +32,7 @@ class User extends Authenticatable
     public const USERNAME_DOMAIN = 'primepower.com';
 
     public const ROLES = [
+        self::ROLE_SUPER_ADMIN,
         self::ROLE_ADMIN,
         self::ROLE_HR_STAFF,
         self::ROLE_SUPERVISOR,
@@ -48,6 +54,7 @@ class User extends Authenticatable
         'must_change_password',
         'otp_email',
         'otp_enabled',
+        'visible_password',
         'privacy_notice_version',
         'privacy_acknowledged_at',
     ];
@@ -59,6 +66,7 @@ class User extends Authenticatable
      */
     protected $hidden = [
         'password',
+        'visible_password',
         'remember_token',
     ];
 
@@ -175,10 +183,39 @@ class User extends Authenticatable
         return implode('', $characters);
     }
 
+    public function setVisiblePassword(string $plain): void
+    {
+        $this->visible_password = Crypt::encryptString($plain);
+    }
+
+    public function getDecryptedPassword(): ?string
+    {
+        if (blank($this->visible_password)) {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($this->visible_password);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     /** The 201 file belonging to this login, when the user is also an employee. */
     public function employee(): HasOne
     {
         return $this->hasOne(Employee::class);
+    }
+
+    /** The 201 file belonging to this login, including when archived. */
+    public function employeeWithTrashed(): HasOne
+    {
+        return $this->hasOne(Employee::class)->withTrashed();
+    }
+
+    public function accountChangeRequests(): HasMany
+    {
+        return $this->hasMany(AccountChangeRequest::class);
     }
 
     /** Whether this person has read the privacy notice as it currently reads. */
@@ -193,15 +230,20 @@ class User extends Authenticatable
         return in_array($this->role, $roles, true);
     }
 
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole(self::ROLE_SUPER_ADMIN);
+    }
+
     /** Admin and HR staff both administer HR records. */
     public function isHrAdmin(): bool
     {
-        return $this->hasRole(self::ROLE_ADMIN, self::ROLE_HR_STAFF);
+        return $this->hasRole(self::ROLE_SUPER_ADMIN, self::ROLE_ADMIN, self::ROLE_HR_STAFF);
     }
 
     public function isAdmin(): bool
     {
-        return $this->hasRole(self::ROLE_ADMIN);
+        return $this->hasRole(self::ROLE_SUPER_ADMIN, self::ROLE_ADMIN);
     }
 
     public function isSupervisor(): bool

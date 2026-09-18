@@ -23,6 +23,7 @@ class BindOtpEmailCommand extends Command
 
         if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->error("Invalid email address: {$email}");
+
             return Command::FAILURE;
         }
 
@@ -32,10 +33,11 @@ class BindOtpEmailCommand extends Command
 
         if (! $user) {
             $this->error("User with username [{$username}] not found.");
-            $this->line("Available accounts in the system:");
+            $this->line('Available accounts in the system:');
             User::orderBy('role')->get(['id', 'username', 'role', 'name', 'otp_email'])->each(function ($u) {
-                $this->line(sprintf(" - %-30s (%-12s) [%s] -> OTP: %s", $u->username, $u->role, $u->name, $u->otp_email ?? 'None'));
+                $this->line(sprintf(' - %-30s (%-12s) [%s] -> OTP: %s', $u->username, $u->role, $u->name, $u->otp_email ?? 'None'));
             });
+
             return Command::FAILURE;
         }
 
@@ -53,15 +55,15 @@ class BindOtpEmailCommand extends Command
             $this->line("  Previous OTP address: {$oldEmail}");
         }
 
-        $this->line("  Multi-Factor Authentication (MFA) is now ACTIVE for this account.");
+        $this->line('  Multi-Factor Authentication (MFA) is now ACTIVE for this account.');
         $this->line("  Sign-in codes (2-minute validity) will be sent to {$email}.");
 
         if ($this->option('send-test')) {
-            $this->line("  Sending a test sign-in code now...");
+            $this->line('  Sending a test sign-in code now...');
             if ($otp->send($user)) {
                 $this->info("  ✓ Test code sent to {$email}! Check your inbox.");
             } else {
-                $this->error("  ✗ Could not send test code. Please check your mail configuration.");
+                $this->error('  ✗ Could not send test code. Please check your mail configuration.');
             }
         } else {
             $this->comment("  Tip: Pass --send-test or run 'php artisan mail:test {$email}' to verify delivery.");

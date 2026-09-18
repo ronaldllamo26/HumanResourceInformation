@@ -71,7 +71,7 @@ class AuditLogSigner
      */
     private function canonical(AuditLog $log): string
     {
-        return implode("\x1F", [
+        $fields = [
             $log->id,
             $log->user_id ?? '',
             $log->auditable_type ?? '',
@@ -82,7 +82,32 @@ class AuditLogSigner
             $log->ip_address ?? '',
             $log->user_agent ?? '',
             $log->created_at?->getTimestamp() ?? '',
-        ]);
+        ];
+
+        /*
+         * `impersonated_by` joins the signature **only when it is set**, and
+         * the condition is the whole point rather than a shortcut.
+         *
+         * Appended unconditionally, every row written before the column
+         * existed would gain an empty field in its canonical string, its
+         * stored signature would stop matching, and `verify()` would report
+         * all 1,896 of them as altered — a tamper-evident trail crying
+         * tamper at its own migration is one nobody will trust the next time
+         * it speaks. Left out of the signature altogether it would be the one
+         * field on the row that could be edited with no signature to break,
+         * and it is precisely the field somebody covering their tracks would
+         * edit: clearing it turns an administrator's action into the
+         * employee's own.
+         *
+         * Conditional inclusion holds in both directions. Clearing a real
+         * impersonator drops the field and breaks the signature; inventing
+         * one on an old row adds it and breaks the signature.
+         */
+        if ($log->impersonated_by !== null) {
+            $fields[] = 'impersonated_by='.$log->impersonated_by;
+        }
+
+        return implode("\x1F", $fields);
     }
 
     private function json(mixed $value): string

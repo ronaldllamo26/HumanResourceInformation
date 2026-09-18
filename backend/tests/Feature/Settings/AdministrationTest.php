@@ -114,10 +114,10 @@ class AdministrationTest extends TestCase
 
     public function test_an_admin_edits_an_accounts_name_and_username(): void
     {
-        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
         $user = User::factory()->create(['name' => 'Nina Reyes', 'username' => 'nreyes@primepower.com']);
 
-        $this->actingAs($admin)
+        $this->actingAs($superAdmin)
             ->put("/settings/users/{$user->id}/profile", ['name' => 'Nina Reyes-Cruz', 'username' => 'nreyescruz'])
             ->assertSessionHasNoErrors();
 
@@ -129,10 +129,10 @@ class AdministrationTest extends TestCase
 
     public function test_the_new_username_signs_in(): void
     {
-        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
         $user = User::factory()->create(['password' => 'correct-horse-battery', 'must_change_password' => false]);
 
-        $this->actingAs($admin)
+        $this->actingAs($superAdmin)
             ->put("/settings/users/{$user->id}/profile", ['name' => $user->name, 'username' => 'renamed'])
             ->assertSessionHasNoErrors();
 
@@ -144,11 +144,11 @@ class AdministrationTest extends TestCase
 
     public function test_a_username_somebody_else_holds_is_refused(): void
     {
-        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
         $taken = User::factory()->create(['username' => 'taken@primepower.com']);
         $user = User::factory()->create();
 
-        $this->actingAs($admin)
+        $this->actingAs($superAdmin)
             ->put("/settings/users/{$user->id}/profile", ['name' => $user->name, 'username' => 'taken'])
             ->assertSessionHasErrors('username');
 
@@ -162,11 +162,11 @@ class AdministrationTest extends TestCase
      */
     public function test_a_rename_that_drifts_from_the_201_file_says_so(): void
     {
-        $admin = User::factory()->admin()->create();
+        $superAdmin = User::factory()->superAdmin()->create();
         $user = User::factory()->create();
         Employee::factory()->create(['user_id' => $user->id, 'first_name' => 'Juan', 'last_name' => 'Dela Cruz']);
 
-        $this->actingAs($admin)
+        $this->actingAs($superAdmin)
             ->put("/settings/users/{$user->id}/profile", ['name' => 'Juanito Cruz', 'username' => $user->username])
             ->assertSessionHas('success', fn ($message) => str_contains($message, 'employee record still reads'));
     }

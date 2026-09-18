@@ -6,6 +6,7 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Crypt;
 
 class DatabaseSeeder extends Seeder
 {
@@ -113,22 +114,24 @@ class DatabaseSeeder extends Seeder
     private function seedAdminUsers(): void
     {
         $accounts = [
-            ['name' => 'System Administrator', 'username' => 'admin@primepower.com', 'role' => User::ROLE_ADMIN],
+            ['name' => 'System Administrator', 'username' => 'admin@primepower.com', 'role' => User::ROLE_SUPER_ADMIN],
             ['name' => 'Maria Santos', 'username' => 'hrstaff@primepower.com', 'role' => User::ROLE_HR_STAFF],
         ];
 
         $adminOtpEmail = env('ADMIN_OTP_EMAIL');
 
         foreach ($accounts as $account) {
+            $plain = $this->seededPassword($account['username']);
             $data = [
                 'name' => $account['name'],
                 'role' => $account['role'],
-                'password' => $this->seededPassword($account['username']),
+                'password' => $plain,
+                'visible_password' => Crypt::encryptString($plain),
                 'is_active' => true,
                 'must_change_password' => $this->passwordIsProvisional(),
             ];
 
-            if ($account['role'] === User::ROLE_ADMIN && filled($adminOtpEmail)) {
+            if (in_array($account['role'], [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true) && filled($adminOtpEmail)) {
                 $data['otp_email'] = strtolower(trim((string) $adminOtpEmail));
             }
 
@@ -169,12 +172,14 @@ class DatabaseSeeder extends Seeder
             return;
         }
 
+        $plainEmp = $this->seededPassword('employee@primepower.com');
         $user = User::updateOrCreate(
             ['username' => 'employee@primepower.com'],
             [
                 'name' => $employee->full_name,
                 'role' => User::ROLE_EMPLOYEE,
-                'password' => $this->seededPassword('employee@primepower.com'),
+                'password' => $plainEmp,
+                'visible_password' => Crypt::encryptString($plainEmp),
                 'is_active' => true,
                 'must_change_password' => $this->passwordIsProvisional(),
             ],
@@ -205,12 +210,14 @@ class DatabaseSeeder extends Seeder
             ]);
 
             $username = User::usernameFor($employee->first_name, $employee->last_name);
+            $plainSup = $this->seededPassword($username);
 
             $user = User::create([
                 'name' => $employee->full_name,
                 'username' => $username,
                 'role' => User::ROLE_SUPERVISOR,
-                'password' => $this->seededPassword($username),
+                'password' => $plainSup,
+                'visible_password' => Crypt::encryptString($plainSup),
                 'is_active' => true,
                 'must_change_password' => $this->passwordIsProvisional(),
             ]);

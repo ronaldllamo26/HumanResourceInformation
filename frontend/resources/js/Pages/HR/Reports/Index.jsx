@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { FileDown, FileText, Printer, Table2 } from 'lucide-react';
+import { FileDown, FileSpreadsheet, FileText, Printer, Table2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Button,
@@ -180,6 +180,10 @@ export default function Index({ reports, report, filters, result, options }) {
                             <Table2 className="h-4 w-4" />
                             CSV
                         </Button>
+                        <Button variant="outline" href={exportUrl('excel')} external>
+                            <FileSpreadsheet className="h-4 w-4" />
+                            Excel
+                        </Button>
                         <Button href={exportUrl('pdf')} external>
                             <FileDown className="h-4 w-4" />
                             PDF
@@ -198,9 +202,6 @@ export default function Index({ reports, report, filters, result, options }) {
                 <div className="border-b border-border px-4 py-3">
                     <h2 className="text-sm font-semibold text-foreground">{result.title}</h2>
                     <p className="text-xs text-muted-foreground">{result.subtitle}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                        {definition.description}
-                    </p>
                 </div>
 
                 <Table>
@@ -256,7 +257,7 @@ export default function Index({ reports, report, filters, result, options }) {
                     {result.truncated && (
                         <p className="text-xs text-warning">
                             Showing the first {result.rows.length} of {result.row_count} rows.
-                            The PDF and CSV carry all {result.row_count}.
+                            The PDF, CSV, and Excel downloads carry all {result.row_count}.
                         </p>
                     )}
                     {result.note && (

@@ -157,7 +157,20 @@ class ReportTest extends TestCase
 
     public function test_an_unknown_format_is_not_a_report(): void
     {
-        $this->actingAs($this->hr())->get('/hr/reports/export/xlsx?report=employees')->assertNotFound();
+        $this->actingAs($this->hr())->get('/hr/reports/export/docx?report=employees')->assertNotFound();
+    }
+
+    public function test_the_excel_export_returns_spreadsheet(): void
+    {
+        $this->workerWithADay();
+
+        $response = $this->actingAs($this->hr())
+            ->get('/hr/reports/export/excel?report=attendance&from=2026-09-01&to=2026-09-15')
+            ->assertOk()
+            ->assertHeader('content-type', 'application/vnd.ms-excel; charset=utf-8');
+
+        $this->assertStringContainsString('urn:schemas-microsoft-com:office:spreadsheet', $response->getContent());
+        $this->assertStringContainsString('Attendance Summary', $response->getContent());
     }
 
     /** No report carries what a stolen copy would be worth stealing. */

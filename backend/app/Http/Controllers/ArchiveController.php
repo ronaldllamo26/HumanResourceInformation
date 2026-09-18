@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Employee;
+use App\Models\User;
 use App\Services\EmployeeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,16 +17,9 @@ use Inertia\Response;
 /**
  * The master list of everything that has been deleted, and the way back.
  *
- * A delete button in this system never destroys a row — employees and clients
- * are soft-deleted. Before this screen existed that was a promise nobody could
- * see: an archived employee simply vanished from the directory with no way to
- * find them again short of a database query, and a mis-click cost a retype of
- * the whole 201 file.
- *
- * Two record types on one screen rather than an archive tab on each, because
- * the question being asked is "what did we delete", not "what did we delete
- * from Employees". Someone hunting a record they removed by accident does not
- * remember which list they were on when they did it.
+ * A delete button in this system never permanently destroys a row — employees,
+ * user accounts, and clients are soft-deleted. The Archive module allows
+ * administrators to view deleted data by category and restore them at any time.
  */
 class ArchiveController extends Controller
 {
@@ -32,12 +27,11 @@ class ArchiveController extends Controller
 
     public function index(Request $request): Response
     {
-        // Restoring is an admin act on both models, so the screen that offers
-        // it is admin-only too. Reusing the org gate would let HR staff in.
         Gate::authorize('viewArchive', Employee::class);
 
         $window = (int) config('archive.restore_window_days', 30);
         $search = $request->string('search')->trim()->value();
+        $category = $request->string('category')->trim()->value() ?: 'all';
 
         $employees = Employee::onlyTrashed()
             ->with(['department:id,name', 'position:id,title', 'client:id,name'])
@@ -49,13 +43,32 @@ class ArchiveController extends Controller
                 'kind' => 'employee',
                 'reference' => $employee->employee_number,
                 'name' => $employee->full_name,
-                // What it was filed under, so a restore is an informed choice
-                // rather than a name with no context around it.
                 'detail' => $employee->client?->name
                     ?? $employee->department?->name
                     ?? 'No department',
-                'sub_detail' => $employee->position?->title,
+                'sub_detail' => $employee->position?->title ?? $employee->employment_status,
                 ...$this->timing($employee->deleted_at, $window),
+            ]);
+
+        $users = User::onlyTrashed()
+            ->with(['employeeWithTrashed:id,user_id,employee_number,first_name,last_name'])
+            ->when($search, fn ($q) => $q->where(fn ($inner) => $inner
+                ->where('name', 'like', "%{$search}%")
+                ->orWhere('username', 'like', "%{$search}%")
+                ->orWhere('otp_email', 'like', "%{$search}%"),
+            ))
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'kind' => 'user',
+                'reference' => $user->username,
+                'name' => $user->name,
+                'detail' => ucwords(str_replace('_', ' ', $user->role)),
+                'sub_detail' => $user->employeeWithTrashed
+                    ? "Linked Employee: {$user->employeeWithTrashed->employee_number}"
+                    : ($user->otp_email ? "Email: {$user->otp_email}" : 'No linked employee'),
+                ...$this->timing($user->deleted_at, $window),
             ]);
 
         $clients = Client::onlyTrashed()
@@ -75,16 +88,21 @@ class ArchiveController extends Controller
                 ...$this->timing($client->deleted_at, $window),
             ]);
 
-        $rows = $employees->concat($clients)
+        $rows = $employees->concat($users)->concat($clients)
             ->sortByDesc('deleted_at')
             ->values();
 
         return Inertia::render('HR/Archive', [
             'rows' => $rows,
-            'filters' => ['search' => $search],
+            'filters' => [
+                'search' => $search,
+                'category' => $category,
+            ],
             'window' => $window,
             'summary' => [
+                'all' => $rows->count(),
                 'employees' => Employee::onlyTrashed()->count(),
+                'users' => User::onlyTrashed()->count(),
                 'clients' => Client::onlyTrashed()->count(),
                 'within_window' => $rows->where('within_window', true)->count(),
             ],
@@ -97,11 +115,46 @@ class ArchiveController extends Controller
 
         Gate::authorize('restore', $record);
 
-        // Reuses the service the API restore already calls, so the two entry
-        // points cannot drift: it also reactivates the login it deactivated.
         $this->employees->restore($record);
 
-        return back()->with('success', "{$record->full_name} restored.");
+        return back()->with('success', "{$record->full_name} restored to Employee Directory.");
+    }
+
+    public function restoreUser(Request $request, int $user): RedirectResponse
+    {
+        Gate::authorize('viewArchive', Employee::class);
+
+        $record = User::onlyTrashed()->findOrFail($user);
+        $record->restore();
+        $record->update(['is_active' => true]);
+
+        // If this user has a soft-deleted employee profile, restore it too so they reappear in the directory
+        if ($record->employeeWithTrashed) {
+            $employee = $record->employeeWithTrashed;
+            $employee->restore();
+            $employee->update([
+                'status' => 'active',
+                'employment_status' => 'regular',
+                'date_separated' => null,
+                'separation_reason' => null,
+            ]);
+        }
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'auditable_type' => User::class,
+            'auditable_id' => $record->id,
+            'event' => 'account_restored',
+            'old_values' => null,
+            'new_values' => [
+                'username' => $record->username,
+                'name' => $record->name,
+            ],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return back()->with('success', "Account for {$record->name} ({$record->username}) restored.");
     }
 
     public function restoreClient(int $client): RedirectResponse
@@ -116,9 +169,6 @@ class ArchiveController extends Controller
 
     /**
      * When it was deleted and whether that is still recent.
-     *
-     * `within_window` only changes how the row reads — nothing expires. See
-     * config/archive.php for why an HRIS must not purge on a timer.
      *
      * @return array<string, mixed>
      */

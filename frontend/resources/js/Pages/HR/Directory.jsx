@@ -230,25 +230,21 @@ export default function Directory({ departments, unassigned, filters, total }) {
             breadcrumbs={[
                 { label: 'Human Resource' },
                 { label: 'Employee Information', href: '/hr/employees' },
-                { label: 'Departments & Positions' },
+                { label: 'Employee Directory' },
             ]}
         >
-            <OrgTabs currentTab="directory" />
-
             <div className="mb-5 grid gap-4 sm:grid-cols-3">
                 <StatCard
                     label="People Listed"
                     value={total}
                     icon={Users}
                     tone={total > 0 ? 'primary' : 'muted'}
-                    hint="active staff only"
                 />
                 <StatCard
                     label="Departments"
                     value={departments.length}
                     icon={Building2}
                     tone={departments.length > 0 ? 'info' : 'muted'}
-                    hint="with somebody in them"
                 />
                 {/* Not a fault — a new hire filed before their department was
                     decided is still somebody a colleague may need to reach. */}
@@ -257,7 +253,6 @@ export default function Directory({ departments, unassigned, filters, total }) {
                     value={unassigned.headcount}
                     icon={Users}
                     tone={unassigned.headcount > 0 ? 'warning' : 'muted'}
-                    hint="no department on record"
                 />
             </div>
 

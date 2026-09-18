@@ -1,12 +1,26 @@
 import { Link, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
     Briefcase,
+    Calendar,
+    CheckCircle2,
     ChevronDown,
     ChevronRight,
+    CircleSlash,
+    DollarSign,
+    ExternalLink,
+    FileText,
     FileWarning,
     Handshake,
+    MapPin,
+    Pencil,
     Plus,
+    RotateCcw,
+    Search,
+    ShieldAlert,
+    ShieldCheck,
+    UserCheck,
+    UserPlus,
     Users,
 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
@@ -24,10 +38,16 @@ import {
     Select,
     MeterCard,
     StatCard,
+    Table,
+    TBody,
+    TD,
+    TH,
+    THead,
+    TR,
 } from '@/Components/ui';
 import { cn, formatCurrency, formatDate, initials } from '@/lib/utils';
 
-const BLANK = {
+const BLANK_CLIENT = {
     code: '',
     name: '',
     industry: '',
@@ -39,6 +59,17 @@ const BLANK = {
     contract_start: '',
     contract_end: '',
     is_active: true,
+};
+
+const BLANK_DEPLOYMENT = {
+    client_id: '',
+    position_id: '',
+    employment_status: 'contractual',
+    contract_start: '',
+    contract_end: '',
+    basic_salary: '',
+    wage_region: '',
+    notes: '',
 };
 
 /** One labelled fact inside an opened client. Absent rather than blank. */
@@ -55,23 +86,9 @@ function Fact({ label, children }) {
     );
 }
 
-/*
- * Where the people with nothing filed against them go.
- *
- * Named buckets rather than dropping them: somebody with no department is
- * still somebody who can be sent, and a picker that silently omitted them
- * would be a list nobody could reconcile against the roster.
- */
 const NO_DEPARTMENT = 'No department';
 const NO_POSITION = 'No position on file';
 
-/**
- * Groups the roster by one field, keeping a bucket for the people who have
- * none of it, and counting how many of each group are free to send.
- *
- * The free count is the number the reader is actually after: "Operations has
- * twelve" is trivia until you know that eight of them are unplaced.
- */
 function groupBy(employees, field, fallback) {
     const groups = new Map();
 
@@ -91,7 +108,6 @@ function groupBy(employees, field, fallback) {
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** One step down the org chart — a department, or a position inside one. */
 function DrillRow({ group, onOpen }) {
     return (
         <button
@@ -102,13 +118,6 @@ function DrillRow({ group, onOpen }) {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                 {group.name}
             </span>
-
-            {/*
-             * Two figures, because one does not answer the question. `free` is
-             * what somebody opening this modal is looking for; the total is
-             * the scale it has to be read against — three free out of four is
-             * a different situation from three out of thirty.
-             */}
             <span className="shrink-0 text-xs text-muted-foreground">
                 <span className={group.free > 0 ? 'font-medium text-foreground' : ''}>
                     {group.free} free
@@ -116,7 +125,6 @@ function DrillRow({ group, onOpen }) {
                 {' · '}
                 {group.members.length} total
             </span>
-
             <ChevronRight
                 className="h-4 w-4 shrink-0 text-muted-foreground"
                 aria-hidden="true"
@@ -125,23 +133,12 @@ function DrillRow({ group, onOpen }) {
     );
 }
 
-/**
- * One half of the person list: the people who are free, or the people who are
- * already somewhere.
- *
- * The group carries the explanation once, in its heading, rather than every
- * row repeating it. A row then only has to say *which* client, which is the
- * part that differs between them.
- *
- * Absent rather than empty when the group has nobody: a heading over nothing
- * is a thing the reader has to look at twice to learn there is nothing there.
- */
 function PickGroup({ label, hint, employees, busy, onPick }) {
     if (employees.length === 0) return null;
 
     return (
         <>
-            <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-border bg-secondary/60 px-4 py-1.5 backdrop-blur">
+            <div className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-border bg-secondary/80 px-4 py-1.5 backdrop-blur">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
                     {label}
                 </span>
@@ -166,19 +163,6 @@ function PickGroup({ label, hint, employees, busy, onPick }) {
                         <span className="block truncate text-sm font-medium text-foreground">
                             {employee.full_name}
                         </span>
-
-                        {/*
-                         * The job first, then where they sit, then the number.
-                         * A client asking for drivers is deciding on the
-                         * *position* — the employee number is how you confirm
-                         * you picked the right person, which is a later
-                         * question and belongs later in the line.
-                         *
-                         * "No position on file" is said rather than left
-                         * blank: it is a real gap somebody should fix before
-                         * this person is sent anywhere, and a silent absence
-                         * reads as a rendering fault.
-                         */}
                         <span className="block truncate text-[11px] text-muted-foreground">
                             <span className={employee.position ? 'text-foreground' : 'italic'}>
                                 {employee.position ?? 'No position on file'}
@@ -188,12 +172,6 @@ function PickGroup({ label, hint, employees, busy, onPick }) {
                         </span>
                     </span>
 
-                    {/*
-                     * A badge rather than plain text, and `info` rather than a
-                     * warning: being on somebody's site is a *state*, not a
-                     * fault. Muted where there is nothing to name, because
-                     * "not deployed" is the quiet answer of the two.
-                     */}
                     <Badge variant={employee.client_name ? 'info' : 'muted'}>
                         {employee.client_name ?? 'Not deployed'}
                     </Badge>
@@ -204,56 +182,80 @@ function PickGroup({ label, hint, employees, busy, onPick }) {
 }
 
 /**
- * A client, closed until somebody asks about it.
- *
- * The same shape the departments screen uses, and for the same reason: a table
- * of clients could be counted and never opened, so "what did we sign with
- * Metro Fleet, and who is on their site" had to be answered somewhere else.
- * Both halves are in here now — the terms, then the people.
+ * Enhanced Client Card with Contract Details, Regional Floor, and Deployed Roster.
  */
-function ClientBlock({ client, open, onToggle, onDeploy, onRecall }) {
+function ClientBlock({
+    client,
+    open,
+    onToggle,
+    onOpenDeploy,
+    onOpenEditDeployment,
+    onRecall,
+    wageRegions,
+}) {
     const staff = client.employees ?? [];
 
+    const regionInfo = useMemo(() => {
+        return (
+            wageRegions.find((r) => r.value === client.wage_region) ?? {
+                label: client.wage_region,
+                daily_minimum: client.daily_minimum,
+            }
+        );
+    }, [wageRegions, client.wage_region]);
+
     return (
-        <Card className="mb-3">
+        <Card className="mb-4 overflow-hidden transition-all duration-200">
             <button
                 type="button"
                 onClick={onToggle}
                 aria-expanded={open}
                 className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-secondary/40"
             >
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <Handshake className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Handshake className="h-5 w-5" aria-hidden="true" />
                 </span>
 
                 <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold text-foreground">
-                        {client.name}
-                    </h3>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                        <span className="font-mono">{client.code}</span>
-                        {client.industry && ` · ${client.industry}`}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-base font-semibold text-foreground">
+                            {client.name}
+                        </h3>
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                            {client.code}
+                        </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {client.industry && <span>{client.industry} · </span>}
+                        {client.address && <span>{client.address} · </span>}
+                        {client.wage_region_label && (
+                            <span className="font-medium text-primary">
+                                {client.wage_region_label}
+                                {client.daily_minimum &&
+                                    ` (Floor: ${formatCurrency(client.daily_minimum)}/day)`}
+                            </span>
+                        )}
                     </p>
                 </div>
 
-                {/* A contract past its end date with people still on it is the
-                    one finding worth carrying on the closed row: the
-                    deployment is running past what was signed for. Reported,
-                    never enforced — blocking payroll over a paperwork gap
-                    would strand those employees unpaid. */}
-                {client.contract_lapsed && (
-                    <Badge variant="warning">
-                        <FileWarning className="h-3 w-3" aria-hidden="true" />
-                        Contract lapsed
+                <div className="hidden items-center gap-2 sm:flex">
+                    {client.contract_lapsed && (
+                        <Badge variant="warning">
+                            <FileWarning className="mr-1 h-3 w-3" aria-hidden="true" />
+                            Contract lapsed
+                        </Badge>
+                    )}
+
+                    {!client.is_active && <Badge variant="muted">Inactive</Badge>}
+
+                    <Badge
+                        variant={client.active_employees_count > 0 ? 'info' : 'muted'}
+                        className="font-medium"
+                    >
+                        {client.active_employees_count}{' '}
+                        {client.active_employees_count === 1 ? 'Person' : 'People'} Deployed
                     </Badge>
-                )}
-
-                {!client.is_active && <Badge variant="muted">Inactive</Badge>}
-
-                <Badge variant={client.active_employees_count > 0 ? 'info' : 'muted'}>
-                    {client.active_employees_count}{' '}
-                    {client.active_employees_count === 1 ? 'person' : 'people'}
-                </Badge>
+                </div>
 
                 <ChevronDown
                     className={cn(
@@ -265,180 +267,405 @@ function ClientBlock({ client, open, onToggle, onDeploy, onRecall }) {
             </button>
 
             {open && (
-                <>
-                    <dl className="grid gap-4 border-t border-border px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <Fact label="Contact">{client.contact_person}</Fact>
-                        <Fact label="Email">
+                <div className="border-t border-border bg-card/60">
+                    {/* Client Master Details Bar */}
+                    <dl className="grid gap-4 border-b border-border/80 bg-muted/20 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <Fact label="Contact Person">{client.contact_person}</Fact>
+                        <Fact label="Contact Email">
                             {client.contact_email && (
                                 <a
                                     href={`mailto:${client.contact_email}`}
-                                    className="hover:text-primary"
+                                    className="text-primary hover:underline"
                                 >
                                     {client.contact_email}
                                 </a>
                             )}
                         </Fact>
-                        <Fact label="Phone">
+                        <Fact label="Contact Phone">
                             {client.contact_number && (
                                 <a
                                     href={`tel:${client.contact_number}`}
-                                    className="font-mono tabular-nums hover:text-primary"
+                                    className="font-mono tabular-nums text-primary hover:underline"
                                 >
                                     {client.contact_number}
                                 </a>
                             )}
                         </Fact>
-                        <Fact label="Site">{client.address}</Fact>
+                        <Fact label="Site Location">{client.address}</Fact>
 
-                        {/* Not decoration: each region's RTWPB sets its own
-                            wage floor, so this is the figure a deployed
-                            employee's rate is measured against. */}
-                        <Fact label="Wage region">
-                            {client.wage_region && (
+                        <Fact label="Wage Region & Floor">
+                            {client.wage_region ? (
                                 <>
-                                    {client.wage_region_label ?? client.wage_region}
+                                    <span className="font-medium">
+                                        {client.wage_region_label ?? client.wage_region}
+                                    </span>
                                     {client.daily_minimum && (
-                                        <span className="ml-1 text-xs text-muted-foreground">
-                                            · {formatCurrency(client.daily_minimum)}/day floor
+                                        <span className="ml-1 font-semibold text-emerald-600 dark:text-emerald-400">
+                                            · {formatCurrency(client.daily_minimum)}/day min
                                         </span>
                                     )}
                                 </>
+                            ) : (
+                                <span className="text-muted-foreground">Standard Region</span>
                             )}
                         </Fact>
 
-                        <Fact label="Contract from">
-                            {client.contract_start && formatDate(client.contract_start)}
+                        <Fact label="Client Master Agreement">
+                            {client.contract_start ? (
+                                <>
+                                    {formatDate(client.contract_start)}
+                                    {client.contract_end
+                                        ? ` to ${formatDate(client.contract_end)}`
+                                        : ' (Open-ended)'}
+                                </>
+                            ) : (
+                                <span className="text-muted-foreground">Not set</span>
+                            )}
                         </Fact>
-                        <Fact label="Contract to">
-                            {client.contract_end ? (
-                                <span className={client.contract_lapsed ? 'text-warning' : ''}>
-                                    {formatDate(client.contract_end)}
+
+                        <Fact label="Contract Status">
+                            {client.contract_lapsed ? (
+                                <span className="font-semibold text-warning">
+                                    Lapsed (Expired)
+                                </span>
+                            ) : client.contract_end ? (
+                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                    Active until {formatDate(client.contract_end)}
                                 </span>
                             ) : (
-                                <span className="text-muted-foreground">Open-ended</span>
+                                <span className="text-muted-foreground">Continuous</span>
                             )}
                         </Fact>
 
-                        {/* Everyone ever filed here, against who is there now.
-                            The gap is the client's history, and it is why a
-                            client with staff is deactivated rather than
-                            deleted — payslips keep the client they were
-                            grouped under. */}
-                        <Fact label="Filed here, all time">{client.employees_count}</Fact>
+                        <Fact label="Total Historical Deployments">
+                            {client.employees_count} staff recorded
+                        </Fact>
                     </dl>
 
-                    {/* The action sits with the people it changes, not in the
-                        page header: "deploy somebody" is a question about
-                        *this* client, and a button at the top would have to
-                        ask which one first. A deactivated client is not
-                        offered — it is kept so payroll and attendance keep
-                        what they were filed under, not so somebody new can be
-                        sent there. */}
-                    <div className="flex items-center gap-3 border-t border-border px-5 py-3">
-                        <p className="flex-1 text-xs text-muted-foreground">
-                            {staff.length === 0
-                                ? 'Nobody is deployed here at the moment.'
-                                : `${staff.length} deployed here now.`}
-                        </p>
+                    {/* Action Hub for Client: Data Onboarding & Profiling */}
+                    <div className="flex flex-col gap-3 border-b border-border bg-card px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                Data Onboarding &amp; Deployed Workforce
+                            </h4>
+                        </div>
 
                         {client.is_active ? (
-                            <Button size="sm" onClick={() => onDeploy(client)}>
-                                <Plus className="h-4 w-4" aria-hidden="true" />
-                                Deploy employee
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    href={`/hr/employees/create?client_id=${client.id}`}
+                                    title="Direktang mag-register at mag-profile ng bagong empleyado para sa client na ito"
+                                >
+                                    <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                                    Onboard New Staff
+                                </Button>
+
+                                <Button
+                                    size="sm"
+                                    onClick={() => onOpenDeploy(client)}
+                                    title="Mag-deploy ng existing employee na may kumpletong contract at salary rate"
+                                >
+                                    <Briefcase className="mr-1.5 h-3.5 w-3.5" />
+                                    Deploy Staff to Client
+                                </Button>
+                            </div>
                         ) : (
-                            <span className="text-xs text-muted-foreground">
-                                Deactivated — no new deployments
+                            <span className="text-xs italic text-muted-foreground">
+                                Deactivated Client — hindi maaaring mag-assign ng bagong
+                                deployment.
                             </span>
                         )}
                     </div>
 
-                    <div className="border-t border-border">
-                        {staff.length === 0
-                            ? null
-                            : staff.map((employee) => (
-                                  <div
-                                      key={employee.id}
-                                      className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-0"
-                                  >
-                                      {employee.photo_url ? (
-                                          <img
-                                              src={employee.photo_url}
-                                              alt=""
-                                              className="h-9 w-9 shrink-0 rounded-full object-cover"
-                                          />
-                                      ) : (
-                                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
-                                              {initials(employee.full_name)}
-                                          </span>
-                                      )}
+                    {/* Deployed Workforce Roster */}
+                    {staff.length === 0 ? (
+                        <div className="px-5 py-10 text-center">
+                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-secondary/80 text-muted-foreground">
+                                <Users className="h-6 w-6" aria-hidden="true" />
+                            </div>
+                            <h4 className="mt-3 text-sm font-semibold text-foreground">
+                                Walang Naka-deploy na Empleyado
+                            </h4>
+                            {client.is_active && (
+                                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        href={`/hr/employees/create?client_id=${client.id}`}
+                                    >
+                                        <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                                        Onboard New Staff
+                                    </Button>
+                                    <Button size="sm" onClick={() => onOpenDeploy(client)}>
+                                        <Briefcase className="mr-1.5 h-3.5 w-3.5" />
+                                        Deploy Existing Staff
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <THead>
+                                    <TR className="bg-muted/40 text-[11px]">
+                                        <TH>Employee Profile</TH>
+                                        <TH>Assigned Role / Dept</TH>
+                                        <TH>Contract Duration &amp; Status</TH>
+                                        <TH>Salary Rate &amp; Compliance</TH>
+                                        <TH>Wage Region</TH>
+                                        <TH className="text-right">Actions</TH>
+                                    </TR>
+                                </THead>
+                                <TBody>
+                                    {staff.map((employee) => (
+                                        <TR key={employee.id} className="hover:bg-muted/20">
+                                            {/* Profile */}
+                                            <TD>
+                                                <div className="flex items-center gap-2.5">
+                                                    {employee.photo_url ? (
+                                                        <img
+                                                            src={employee.photo_url}
+                                                            alt=""
+                                                            className="h-9 w-9 shrink-0 rounded-full border border-border object-cover"
+                                                        />
+                                                    ) : (
+                                                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                                                            {initials(employee.full_name)}
+                                                        </span>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <Link
+                                                            href={`/hr/employees/${employee.id}`}
+                                                            className="block truncate text-sm font-medium text-foreground hover:text-primary hover:underline"
+                                                        >
+                                                            {employee.full_name}
+                                                        </Link>
+                                                        <span className="font-mono text-[11px] text-muted-foreground">
+                                                            {employee.employee_number}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </TD>
 
-                                      <div className="min-w-0 flex-1">
-                                          <Link
-                                              href={`/hr/employees/${employee.id}`}
-                                              className="block truncate text-sm font-medium text-foreground hover:text-primary"
-                                          >
-                                              {employee.full_name}
-                                          </Link>
-                                          <p className="truncate font-mono text-[11px] text-muted-foreground">
-                                              {employee.employee_number}
-                                          </p>
-                                      </div>
+                                            {/* Role & Dept */}
+                                            <TD>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-xs font-medium text-foreground">
+                                                        {employee.position ??
+                                                            'No position assigned'}
+                                                    </p>
+                                                    <p className="truncate text-[11px] text-muted-foreground">
+                                                        {employee.department ??
+                                                            'External Manpower'}
+                                                    </p>
+                                                </div>
+                                            </TD>
 
-                                      <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                                          {employee.position ?? 'No position on file'}
-                                      </span>
+                                            {/* Contract */}
+                                            <TD>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-1.5 text-xs text-foreground">
+                                                        <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                        <span>
+                                                            {employee.contract_start
+                                                                ? formatDate(
+                                                                      employee.contract_start,
+                                                                  )
+                                                                : 'Started'}
+                                                            {employee.contract_end ? (
+                                                                <>
+                                                                    {' – '}
+                                                                    <span
+                                                                        className={
+                                                                            employee.contract_lapsed
+                                                                                ? 'font-bold text-destructive'
+                                                                                : ''
+                                                                        }
+                                                                    >
+                                                                        {formatDate(
+                                                                            employee.contract_end,
+                                                                        )}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-muted-foreground">
+                                                                    {' · '}Continuous
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </div>
 
-                                      {/* Bringing somebody back in-house is the
-                                        reverse of deploying them, so it lives
-                                        on the row rather than behind an edit
-                                        screen. The word is "recall" and not
-                                        "remove": the employee is not being
-                                        taken off anything, they are coming
-                                        back to internal staff. */}
-                                      <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="shrink-0"
-                                          onClick={() => onRecall(employee, client)}
-                                      >
-                                          Recall
-                                      </Button>
-                                  </div>
-                              ))}
-                    </div>
-                </>
+                                                    <div>
+                                                        {employee.contract_lapsed ? (
+                                                            <Badge
+                                                                variant="destructive"
+                                                                className="text-[10px]"
+                                                            >
+                                                                Contract Lapsed
+                                                            </Badge>
+                                                        ) : employee.contract_expiring_soon ? (
+                                                            <Badge
+                                                                variant="warning"
+                                                                className="text-[10px]"
+                                                            >
+                                                                Expiring Soon
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge
+                                                                variant="success"
+                                                                className="text-[10px]"
+                                                            >
+                                                                {employee.employment_status
+                                                                    ? ucwords(
+                                                                          employee.employment_status,
+                                                                      )
+                                                                    : 'Active Contract'}
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </TD>
+
+                                            {/* Salary Rate */}
+                                            <TD>
+                                                <div>
+                                                    <p className="font-mono text-xs font-semibold text-foreground">
+                                                        {employee.basic_salary > 0
+                                                            ? formatCurrency(
+                                                                  employee.basic_salary,
+                                                              )
+                                                            : '₱0.00'}{' '}
+                                                        <span className="font-sans text-[10px] font-normal text-muted-foreground">
+                                                            / mo
+                                                        </span>
+                                                    </p>
+                                                    {employee.daily_equivalent > 0 && (
+                                                        <p className="font-mono text-[11px] text-muted-foreground">
+                                                            ≈{' '}
+                                                            {formatCurrency(
+                                                                employee.daily_equivalent,
+                                                            )}
+                                                            /day
+                                                        </p>
+                                                    )}
+                                                    {employee.daily_minimum_floor && (
+                                                        <span
+                                                            className={cn(
+                                                                'mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium',
+                                                                employee.is_wage_compliant
+                                                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                                                    : 'font-semibold text-amber-600 dark:text-amber-400',
+                                                            )}
+                                                        >
+                                                            {employee.is_wage_compliant ? (
+                                                                <CheckCircle2 className="h-3 w-3" />
+                                                            ) : (
+                                                                <ShieldAlert className="h-3 w-3" />
+                                                            )}
+                                                            {employee.is_wage_compliant
+                                                                ? 'Compliant with wage floor'
+                                                                : `Below ${formatCurrency(employee.daily_minimum_floor)}/day`}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </TD>
+
+                                            {/* Region */}
+                                            <TD>
+                                                <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-xs text-foreground">
+                                                    <MapPin className="h-3 w-3 text-muted-foreground" />
+                                                    {employee.wage_region_label ??
+                                                        employee.wage_region ??
+                                                        'Default'}
+                                                </span>
+                                            </TD>
+
+                                            {/* Actions */}
+                                            <TD className="text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() =>
+                                                            onOpenEditDeployment(
+                                                                client,
+                                                                employee,
+                                                            )
+                                                        }
+                                                        title="I-edit ang contract dates, salary rate, o posisyon"
+                                                        aria-label="Edit deployment"
+                                                    >
+                                                        <Pencil className="h-3.5 w-3.5 text-primary" />
+                                                        <span className="ml-1 hidden text-xs lg:inline">
+                                                            Contract &amp; Rate
+                                                        </span>
+                                                    </Button>
+
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="text-muted-foreground hover:text-destructive"
+                                                        onClick={() =>
+                                                            onRecall(employee, client)
+                                                        }
+                                                        title="Ibalik sa internal staff (in-house)"
+                                                        aria-label="Recall employee"
+                                                    >
+                                                        <RotateCcw className="h-3.5 w-3.5" />
+                                                        <span className="ml-1 hidden text-xs lg:inline">
+                                                            Recall
+                                                        </span>
+                                                    </Button>
+                                                </div>
+                                            </TD>
+                                        </TR>
+                                    ))}
+                                </TBody>
+                            </Table>
+                        </div>
+                    )}
+                </div>
             )}
         </Card>
     );
 }
 
-export default function Clients({ clients, deployable = [], filters, summary, wageRegions }) {
+function ucwords(str) {
+    return String(str || '')
+        .replace(/[_-]/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+export default function Clients({
+    clients = [],
+    deployable = [],
+    filters = {},
+    summary = {},
+    wageRegions = [],
+    positions = [],
+    departments = [],
+    employmentStatuses = [],
+}) {
     const [creating, setCreating] = useState(false);
 
-    // The client being deployed to, and what is typed in its picker.
-    const [deploying, setDeploying] = useState(null);
-    const [pickSearch, setPickSearch] = useState('');
+    // Deployment & Profiling Modal state
+    const [deployModal, setDeployModal] = useState({
+        open: false,
+        client: null,
+        employee: null,
+        isEdit: false,
+    });
 
-    /*
-     * How far down the org chart the picker has been walked: department, then
-     * position, then the people. Null at both levels is the top.
-     *
-     * The same shape the Org Directory groups by, and for the same reason —
-     * "I need a driver out of Operations" is walking down the org chart, not
-     * scanning a flat list of forty names for the word "driver".
-     */
+    const [selectedCandidate, setSelectedCandidate] = useState(null);
+    const [pickSearch, setPickSearch] = useState('');
     const [pickDept, setPickDept] = useState(null);
     const [pickPosition, setPickPosition] = useState(null);
 
-    const deployForm = useForm({ client_id: null });
+    const form = useForm(BLANK_CLIENT);
+    const deployForm = useForm(BLANK_DEPLOYMENT);
 
-    /*
-     * Which clients are open. Closed to begin with, and more than one may be
-     * open at once — this is a screen being read, and having one client close
-     * itself because another was opened takes away what somebody was halfway
-     * through. The same choice the departments and positions screens make.
-     */
     const [expanded, setExpanded] = useState(() => new Set());
 
     const toggle = (id) =>
@@ -449,21 +676,16 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
             return next;
         });
 
-    // A search opens what it matched, or the answer arrives as a screen of
-    // shut cards and reads as nothing found.
     const isOpen = (id) => Boolean(filters.search) || expanded.has(id);
 
-    const form = useForm(BLANK);
-
-    const open = () => {
+    const openCreate = () => {
         form.clearErrors();
-        form.setData(BLANK);
+        form.setData(BLANK_CLIENT);
         setCreating(true);
     };
 
-    const submit = (event) => {
+    const submitCreate = (event) => {
         event.preventDefault();
-
         form.post('/hr/clients', {
             preserveScroll: true,
             onSuccess: () => {
@@ -473,82 +695,118 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
         });
     };
 
+    // Open deployment modal for new candidate
     const openDeploy = (client) => {
         setPickSearch('');
         setPickDept(null);
         setPickPosition(null);
-        setDeploying(client);
-    };
-
-    /*
-     * One PATCH per person, addressed as the employee — the same endpoint the
-     * Positions screen moves somebody with, because in both cases it is the
-     * *employee's* record that changes and the policy that guards it is
-     * theirs.
-     *
-     * `transform()` returns undefined, so it is set and then submitted rather
-     * than chained.
-     */
-    const deploy = (employee) => {
-        deployForm.transform(() => ({ client_id: deploying.id }));
-
-        deployForm.patch(`/hr/employees/${employee.id}/deployment`, {
-            preserveScroll: true,
-            onSuccess: () => setDeploying(null),
+        setSelectedCandidate(null);
+        deployForm.clearErrors();
+        deployForm.setData({
+            ...BLANK_DEPLOYMENT,
+            client_id: client.id,
+            wage_region: client.wage_region || '',
+            contract_start: new Date().toISOString().slice(0, 10),
+        });
+        setDeployModal({
+            open: true,
+            client,
+            employee: null,
+            isEdit: false,
         });
     };
 
-    /** The reverse: a null client is what makes somebody internal again. */
-    const recall = (employee) => {
+    // Open deployment modal to edit existing contract/rate
+    const openEditDeployment = (client, employee) => {
+        deployForm.clearErrors();
+        deployForm.setData({
+            client_id: client.id,
+            position_id: employee.position_id ? String(employee.position_id) : '',
+            employment_status: employee.employment_status || 'contractual',
+            contract_start: employee.contract_start || '',
+            contract_end: employee.contract_end || '',
+            basic_salary: employee.basic_salary ? String(employee.basic_salary) : '',
+            wage_region: employee.wage_region || client.wage_region || '',
+            notes: '',
+        });
+        setSelectedCandidate(employee);
+        setDeployModal({
+            open: true,
+            client,
+            employee,
+            isEdit: true,
+        });
+    };
+
+    const selectCandidate = (employee) => {
+        setSelectedCandidate(employee);
+        deployForm.setData((prev) => ({
+            ...prev,
+            client_id: deployModal.client.id,
+            position_id: employee.position_id ? String(employee.position_id) : prev.position_id,
+            employment_status: employee.employment_status || 'contractual',
+            basic_salary: employee.basic_salary
+                ? String(employee.basic_salary)
+                : prev.basic_salary,
+            wage_region: employee.wage_region || deployModal.client.wage_region || '',
+            contract_start: employee.contract_start || new Date().toISOString().slice(0, 10),
+            contract_end: employee.contract_end || '',
+        }));
+    };
+
+    const submitDeployment = (event) => {
+        event.preventDefault();
+
+        const employeeId = selectedCandidate?.id || deployModal.employee?.id;
+        if (!employeeId) return;
+
+        deployForm.patch(`/hr/employees/${employeeId}/deployment`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDeployModal({ open: false, client: null, employee: null, isEdit: false });
+                setSelectedCandidate(null);
+            },
+        });
+    };
+
+    const recall = (employee, client) => {
+        if (
+            !window.confirm(
+                `Ibalik si ${employee.full_name} sa internal staff mula sa ${client.name}?`,
+            )
+        ) {
+            return;
+        }
+
         deployForm.transform(() => ({ client_id: null }));
-
         deployForm.patch(`/hr/employees/${employee.id}/deployment`, {
             preserveScroll: true,
         });
     };
 
-    /*
-     * Everybody except the people already on this client's site — offering a
-     * move to where somebody already is would be an action that does nothing.
-     * The rest of the roster stays, deployed or not: moving a driver between
-     * clients is the commoner act, and a list of only the undeployed answers
-     * the rarer half of the question.
-     */
-    const candidates = deployable
-        .filter((employee) => employee.client_id !== deploying?.id)
-        .filter((employee) => {
-            const needle = pickSearch.trim().toLowerCase();
+    // Candidates filtering
+    const candidates = useMemo(() => {
+        return deployable
+            .filter((employee) => employee.client_id !== deployModal.client?.id)
+            .filter((employee) => {
+                const needle = pickSearch.trim().toLowerCase();
+                if (!needle) return true;
 
-            if (!needle) return true;
+                return [
+                    employee.full_name,
+                    employee.employee_number,
+                    employee.position,
+                    employee.department,
+                ].some((field) =>
+                    String(field ?? '')
+                        .toLowerCase()
+                        .includes(needle),
+                );
+            });
+    }, [deployable, deployModal.client, pickSearch]);
 
-            /*
-             * The position is searchable too, and that is the point of showing
-             * it: a client asking for five drivers wants to type "driver", not
-             * to read forty names looking for the word.
-             */
-            return [
-                employee.full_name,
-                employee.employee_number,
-                employee.position,
-                employee.department,
-            ].some((field) =>
-                String(field ?? '')
-                    .toLowerCase()
-                    .includes(needle),
-            );
-        });
-
-    /*
-     * A search escapes the hierarchy rather than filtering inside it.
-     *
-     * Somebody typing a name knows who they want; making them find the right
-     * department first would be the drill-down charging rent. So a search
-     * flattens to people wherever it is typed, and clearing it puts the reader
-     * back where they were.
-     */
     const searching = pickSearch.trim() !== '';
 
-    /** The people at the level currently open. */
     const atLevel = searching
         ? candidates
         : candidates.filter(
@@ -557,24 +815,13 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                   (employee.position ?? NO_POSITION) === pickPosition,
           );
 
-    /*
-     * Split by whether they are on somebody's site already, because that is
-     * the question being asked of this list and the two answers are different
-     * acts.
-     *
-     * Sending an unplaced driver costs nothing. Sending a placed one *takes
-     * them off another client's site* — the same click, a consequence the
-     * other does not have.
-     */
     const available = atLevel.filter((employee) => employee.client_id === null);
     const placed = atLevel.filter((employee) => employee.client_id !== null);
 
-    // What the current step is offering: departments, then positions, then
-    // the people. Only one of the three is ever non-empty.
-    const departments =
+    const candidateDepartments =
         searching || pickDept ? [] : groupBy(candidates, 'department', NO_DEPARTMENT);
 
-    const positions =
+    const candidatePositions =
         searching || !pickDept || pickPosition
             ? []
             : groupBy(
@@ -587,8 +834,25 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
 
     const showingPeople = searching || Boolean(pickPosition);
 
+    // Dynamic wage calculation in deployment form
+    const currentWageRegion = useMemo(() => {
+        const key = deployForm.data.wage_region || deployModal.client?.wage_region;
+        return wageRegions.find((r) => r.value === key) ?? null;
+    }, [deployForm.data.wage_region, deployModal.client, wageRegions]);
+
+    const dailyCalculated = useMemo(() => {
+        const salary = parseFloat(deployForm.data.basic_salary);
+        return !isNaN(salary) && salary > 0 ? Math.round((salary / 26) * 100) / 100 : 0;
+    }, [deployForm.data.basic_salary]);
+
+    const isSalaryCompliant = useMemo(() => {
+        if (!currentWageRegion?.daily_minimum || dailyCalculated === 0) return true;
+        return dailyCalculated >= currentWageRegion.daily_minimum;
+    }, [dailyCalculated, currentWageRegion]);
+
     const deployedRate = summary.total > 0 ? (summary.deployed / summary.total) * 100 : 0;
-    const set = (field) => (event) => form.setData(field, event.target.value);
+    const setClientField = (field) => (event) => form.setData(field, event.target.value);
+    const setDeployField = (field) => (event) => deployForm.setData(field, event.target.value);
 
     return (
         <AppLayout
@@ -599,18 +863,15 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                 { label: 'Clients' },
             ]}
         >
+            {/* Top Stat Cards */}
             <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     label="Clients"
                     value={summary.total}
                     icon={Briefcase}
                     tone={summary.total > 0 ? 'primary' : 'muted'}
-                    hint={`${summary.active} still taking deployments`}
                 />
 
-                {/* A client with nobody on site is not a fault — it is one
-                    that has not been staffed yet, or has been wound down. The
-                    share says which kind of list this is. */}
                 <MeterCard
                     label="With Deployments"
                     value={summary.deployed}
@@ -619,52 +880,54 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                     icon={Users}
                     tone="success"
                     iconTone="success"
-                    hint={`of ${summary.total} on the books`}
                 />
+
                 <StatCard
                     label="Deployed Staff"
                     value={clients.reduce(
-                        (sum, client) => sum + client.active_employees_count,
+                        (sum, client) => sum + (client.active_employees_count || 0),
                         0,
                     )}
                     icon={Users}
                     tone="info"
-                    hint="active, across all clients"
                 />
-                {/* A contract past its end date with people still on it is the
-                    finding worth surfacing — the deployment is running past
-                    what was signed for. */}
+
                 <StatCard
                     label="Lapsed Contracts"
                     value={summary.lapsed}
                     icon={FileWarning}
                     tone={summary.lapsed > 0 ? 'warning' : 'muted'}
-                    hint="past end date, still staffed"
                 />
             </div>
 
+            {/* Header Action Card */}
             <Card className="mb-5">
-                <CardHeader
-                    title="Clients"
-                    action={
-                        <Button onClick={open}>
-                            <Plus className="h-4 w-4" />
-                            New Client
-                        </Button>
-                    }
-                />
+                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h2 className="text-base font-semibold text-foreground">
+                            Client Organizations &amp; Manpower Deployments
+                        </h2>
+                    </div>
+
+                    <Button onClick={openCreate}>
+                        <Plus className="mr-1.5 h-4 w-4" />
+                        New Client
+                    </Button>
+                </div>
             </Card>
 
+            {/* Clients List */}
             {clients.length === 0 ? (
                 <Card>
                     <CardBody className="py-14 text-center">
                         <p className="text-sm font-medium text-foreground">
                             {filters.search
                                 ? 'No client matches that search'
-                                : 'No clients yet'}
+                                : 'Walang rehistradong kliyente sa ngayon.'}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                            Clients are the companies deployed employees are filed against.
+                            Magdagdag ng kliyente upang simulan ang pag-onboard at pag-deploy ng
+                            mga kawani.
                         </p>
                     </CardBody>
                 </Card>
@@ -675,156 +938,409 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                         client={client}
                         open={isOpen(client.id)}
                         onToggle={() => toggle(client.id)}
-                        onDeploy={openDeploy}
+                        onOpenDeploy={openDeploy}
+                        onOpenEditDeployment={openEditDeployment}
                         onRecall={recall}
+                        wageRegions={wageRegions}
                     />
                 ))
             )}
 
+            {/* Comprehensive Deployment & Profiling Modal */}
             <Modal
-                show={deploying !== null}
-                onClose={() => setDeploying(null)}
-                title={deploying ? `Deploy to ${deploying.name}` : ''}
-                /*
-                   The whole roster's figures, not the open level's — this
-                   line answers "is there anybody free at all", which is the
-                   question before the drill-down starts. The per-level counts
-                   are on the rows, where they narrow with the walk. */
-                description={`${candidates.filter((employee) => employee.client_id === null).length} not deployed, ${candidates.filter((employee) => employee.client_id !== null).length} on another client's site. Walk down to a position, or search a name.`}
-                maxWidth="lg"
+                show={deployModal.open}
+                onClose={() => {
+                    setDeployModal({
+                        open: false,
+                        client: null,
+                        employee: null,
+                        isEdit: false,
+                    });
+                    setSelectedCandidate(null);
+                }}
+                title={
+                    deployModal.isEdit
+                        ? `I-edit ang Kontrata at Deployment · ${selectedCandidate?.full_name}`
+                        : `Data Onboarding & Deployment Profiling · ${deployModal.client?.name}`
+                }
+                maxWidth="3xl"
             >
-                <div className="space-y-3">
-                    <SearchInput
-                        value={pickSearch}
-                        onChange={(event) => setPickSearch(event.target.value)}
-                        placeholder="Search a name, position, or department"
-                        aria-label="Search employees to deploy"
-                    />
+                <div className="space-y-4">
+                    {/* Step 1: Candidate Selection (Only when deploying new) */}
+                    {!deployModal.isEdit && !selectedCandidate && (
+                        <div className="space-y-3">
+                            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-foreground">
+                                <span className="font-semibold text-primary">
+                                    Hakbang 1: Piliin ang Empleyadong I-dedeploy
+                                </span>
+                                <p className="mt-0.5 text-muted-foreground">
+                                    Pumili ng kawani mula sa listahan. Mag-search ng pangalan o
+                                    pumili ayon sa departamento.
+                                </p>
+                            </div>
 
-                    {/*
-                     * The trail, and the way back up.
-                     *
-                     * Each crumb is the level it returns to, so going from a
-                     * position back to "all departments" is one click rather
-                     * than two. Hidden while searching, because a search is
-                     * not a place in the hierarchy and a trail pointing at one
-                     * would be a lie about where the reader is.
-                     */}
-                    {!searching && (
-                        <nav className="flex flex-wrap items-center gap-1 text-xs">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPickDept(null);
-                                    setPickPosition(null);
-                                }}
-                                disabled={!pickDept}
-                                className="rounded px-1.5 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:text-foreground"
-                            >
-                                All departments
-                            </button>
+                            <SearchInput
+                                value={pickSearch}
+                                onChange={(event) => setPickSearch(event.target.value)}
+                                placeholder="Mag-search ng pangalan, posisyon, o employee number..."
+                                aria-label="Search employees to deploy"
+                            />
 
-                            {pickDept && (
-                                <>
-                                    <ChevronRight
-                                        className="h-3 w-3 text-muted-foreground"
-                                        aria-hidden="true"
-                                    />
+                            {!searching && (
+                                <nav className="flex flex-wrap items-center gap-1 text-xs">
                                     <button
                                         type="button"
-                                        onClick={() => setPickPosition(null)}
-                                        disabled={!pickPosition}
+                                        onClick={() => {
+                                            setPickDept(null);
+                                            setPickPosition(null);
+                                        }}
+                                        disabled={!pickDept}
                                         className="rounded px-1.5 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:text-foreground"
                                     >
-                                        {pickDept}
+                                        All departments
                                     </button>
-                                </>
+
+                                    {pickDept && (
+                                        <>
+                                            <ChevronRight
+                                                className="h-3 w-3 text-muted-foreground"
+                                                aria-hidden="true"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setPickPosition(null)}
+                                                disabled={!pickPosition}
+                                                className="rounded px-1.5 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:text-foreground"
+                                            >
+                                                {pickDept}
+                                            </button>
+                                        </>
+                                    )}
+
+                                    {pickPosition && (
+                                        <>
+                                            <ChevronRight
+                                                className="h-3 w-3 text-muted-foreground"
+                                                aria-hidden="true"
+                                            />
+                                            <span className="px-1.5 py-0.5 font-medium text-foreground">
+                                                {pickPosition}
+                                            </span>
+                                        </>
+                                    )}
+                                </nav>
                             )}
 
-                            {pickPosition && (
-                                <>
-                                    <ChevronRight
-                                        className="h-3 w-3 text-muted-foreground"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="px-1.5 py-0.5 font-medium text-foreground">
-                                        {pickPosition}
-                                    </span>
-                                </>
-                            )}
-                        </nav>
-                    )}
-
-                    {/*
-                     * Rows rather than a dropdown: where somebody is *now* is
-                     * the thing being decided against, and a select shows one
-                     * truncated line at a time. The same choice the Positions
-                     * screen makes for the same reason.
-                     *
-                     * Grouped, because the two groups are two different acts —
-                     * see the split above. Ungrouped, both read as the same
-                     * small grey line and the reader had to check each one.
-                     */}
-                    <div className="scrollbar-thin max-h-80 overflow-y-auto rounded-lg border border-border">
-                        {candidates.length === 0 ? (
-                            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                                Nobody left to deploy here.
-                            </p>
-                        ) : (
-                            <>
-                                {departments.map((group) => (
-                                    <DrillRow
-                                        key={group.name}
-                                        group={group}
-                                        onOpen={setPickDept}
-                                    />
-                                ))}
-
-                                {positions.map((group) => (
-                                    <DrillRow
-                                        key={group.name}
-                                        group={group}
-                                        onOpen={setPickPosition}
-                                    />
-                                ))}
-
-                                {showingPeople && (
+                            <div className="scrollbar-thin max-h-72 overflow-y-auto rounded-lg border border-border">
+                                {candidates.length === 0 ? (
+                                    <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                                        Walang available na empleyado para i-deploy.
+                                    </p>
+                                ) : (
                                     <>
-                                        <PickGroup
-                                            label="Not deployed"
-                                            hint="free to send"
-                                            employees={available}
-                                            busy={deployForm.processing}
-                                            onPick={deploy}
-                                        />
-                                        <PickGroup
-                                            label="Deployed elsewhere"
-                                            hint="sending them takes them off that site"
-                                            employees={placed}
-                                            busy={deployForm.processing}
-                                            onPick={deploy}
-                                        />
+                                        {candidateDepartments.map((group) => (
+                                            <DrillRow
+                                                key={group.name}
+                                                group={group}
+                                                onOpen={setPickDept}
+                                            />
+                                        ))}
 
-                                        {atLevel.length === 0 && (
-                                            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                                                {searching
-                                                    ? 'Nobody matches that.'
-                                                    : 'Everybody in this position is already here.'}
-                                            </p>
+                                        {candidatePositions.map((group) => (
+                                            <DrillRow
+                                                key={group.name}
+                                                group={group}
+                                                onOpen={setPickPosition}
+                                            />
+                                        ))}
+
+                                        {showingPeople && (
+                                            <>
+                                                <PickGroup
+                                                    label="Not deployed"
+                                                    hint="free to send"
+                                                    employees={available}
+                                                    busy={deployForm.processing}
+                                                    onPick={selectCandidate}
+                                                />
+                                                <PickGroup
+                                                    label="Deployed elsewhere"
+                                                    hint="malilipat mula sa kasalukuyang site"
+                                                    employees={placed}
+                                                    busy={deployForm.processing}
+                                                    onPick={selectCandidate}
+                                                />
+
+                                                {atLevel.length === 0 && (
+                                                    <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                                                        {searching
+                                                            ? 'Walang tumugma sa search na iyon.'
+                                                            : 'Lahat sa posisyong ito ay naka-deploy na.'}
+                                                    </p>
+                                                )}
+                                            </>
                                         )}
                                     </>
                                 )}
-                            </>
-                        )}
-                    </div>
+                            </div>
+                        </div>
+                    )}
 
-                    <p className="text-xs text-muted-foreground">
-                        Deployment is a single client with no history, so a move regroups past
-                        payslips under the new one.
-                    </p>
+                    {/* Step 2: Contract, Salary Rate & Deployment Details Form */}
+                    {selectedCandidate && (
+                        <form onSubmit={submitDeployment} className="space-y-4">
+                            {/* Selected Employee Summary Banner */}
+                            <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 p-3">
+                                <div className="flex items-center gap-3">
+                                    <span className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                                        {initials(selectedCandidate.full_name)}
+                                    </span>
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-foreground">
+                                            {selectedCandidate.full_name}
+                                        </h4>
+                                        <p className="font-mono text-xs text-muted-foreground">
+                                            {selectedCandidate.employee_number}
+                                            {selectedCandidate.position &&
+                                                ` · ${selectedCandidate.position}`}
+                                            {selectedCandidate.department &&
+                                                ` · ${selectedCandidate.department}`}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {!deployModal.isEdit && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setSelectedCandidate(null)}
+                                    >
+                                        Palitan
+                                    </Button>
+                                )}
+                            </div>
+
+                            {/* Section: Deployment Details */}
+                            <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
+                                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                                    <MapPin className="h-3.5 w-3.5" />
+                                    Deployment &amp; Regional Assignment
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                                            Target Client
+                                        </label>
+                                        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs font-medium text-foreground">
+                                            {deployModal.client?.name} (
+                                            {deployModal.client?.code})
+                                        </div>
+                                    </div>
+
+                                    <Field
+                                        label="Deployment Role / Position"
+                                        error={deployForm.errors.position_id}
+                                    >
+                                        {({ id }) => (
+                                            <Select
+                                                id={id}
+                                                value={deployForm.data.position_id}
+                                                onChange={setDeployField('position_id')}
+                                                placeholder="Select deployment position"
+                                                options={positions.map((pos) => ({
+                                                    value: String(pos.id),
+                                                    label: pos.title,
+                                                }))}
+                                            />
+                                        )}
+                                    </Field>
+
+                                    <Field
+                                        label="Assigned Wage Region"
+                                        error={deployForm.errors.wage_region}
+                                        hint="Kung sa ibang site/rehiyon naiba sa default ng kliyente."
+                                    >
+                                        {({ id }) => (
+                                            <Select
+                                                id={id}
+                                                value={deployForm.data.wage_region}
+                                                onChange={setDeployField('wage_region')}
+                                                placeholder={`Use client's (${deployModal.client?.wage_region || 'Standard'})`}
+                                                options={wageRegions.map((region) => ({
+                                                    value: region.value,
+                                                    label: `${region.label} (Floor: ${formatCurrency(region.daily_minimum)}/day)`,
+                                                }))}
+                                            />
+                                        )}
+                                    </Field>
+
+                                    <Field
+                                        label="Employment / Contract Type"
+                                        required
+                                        error={deployForm.errors.employment_status}
+                                    >
+                                        {({ id }) => (
+                                            <Select
+                                                id={id}
+                                                value={deployForm.data.employment_status}
+                                                onChange={setDeployField('employment_status')}
+                                                options={employmentStatuses}
+                                            />
+                                        )}
+                                    </Field>
+                                </div>
+                            </div>
+
+                            {/* Section: Contract Details (Kontrata) */}
+                            <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
+                                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                                    <FileText className="h-3.5 w-3.5" />
+                                    Contract Details (Kontrata)
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <Field
+                                        label="Contract Start Date (Simula)"
+                                        required
+                                        error={deployForm.errors.contract_start}
+                                    >
+                                        {({ id }) => (
+                                            <DateInput
+                                                id={id}
+                                                value={deployForm.data.contract_start}
+                                                onChange={setDeployField('contract_start')}
+                                                error={deployForm.errors.contract_start}
+                                            />
+                                        )}
+                                    </Field>
+
+                                    <Field
+                                        label="Contract End Date (Katapusan)"
+                                        error={deployForm.errors.contract_end}
+                                        hint="Iwanang blangko kung open-ended / continuous agreement."
+                                    >
+                                        {({ id }) => (
+                                            <DateInput
+                                                id={id}
+                                                value={deployForm.data.contract_end}
+                                                onChange={setDeployField('contract_end')}
+                                                error={deployForm.errors.contract_end}
+                                            />
+                                        )}
+                                    </Field>
+                                </div>
+                            </div>
+
+                            {/* Section: Salary Rate & Regional Floor Compliance */}
+                            <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
+                                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                                    <DollarSign className="h-3.5 w-3.5" />
+                                    Salary Rate &amp; Wage Compliance (Pasahod)
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <Field
+                                        label="Monthly Basic Salary (Rate)"
+                                        required
+                                        error={deployForm.errors.basic_salary}
+                                        hint="Buwanang sahod na nakasaad sa kontrata."
+                                    >
+                                        {({ id }) => (
+                                            <Input
+                                                id={id}
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={deployForm.data.basic_salary}
+                                                onChange={setDeployField('basic_salary')}
+                                                placeholder="hal. 25000"
+                                                error={deployForm.errors.basic_salary}
+                                            />
+                                        )}
+                                    </Field>
+
+                                    {/* Live Wage Floor Calculation Preview */}
+                                    <div className="flex flex-col justify-center rounded-md border border-border/70 bg-secondary/30 p-2.5">
+                                        <div className="text-[11px] font-medium text-muted-foreground">
+                                            Daily Equivalent (26 days):
+                                        </div>
+                                        <div className="font-mono text-sm font-semibold text-foreground">
+                                            {formatCurrency(dailyCalculated)} / araw
+                                        </div>
+
+                                        {currentWageRegion && (
+                                            <div className="mt-1 flex items-center gap-1.5 text-xs">
+                                                {isSalaryCompliant ? (
+                                                    <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                                                        <CheckCircle2 className="h-3 w-3" />
+                                                        Compliant sa Regional Floor (
+                                                        {formatCurrency(
+                                                            currentWageRegion.daily_minimum,
+                                                        )}
+                                                        )
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                                                        <ShieldAlert className="h-3 w-3" />
+                                                        Mababa sa Floor (
+                                                        {formatCurrency(
+                                                            currentWageRegion.daily_minimum,
+                                                        )}
+                                                        /day)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <Field
+                                    label="Deployment Notes / Specific Project Assignment"
+                                    error={deployForm.errors.notes}
+                                >
+                                    {({ id }) => (
+                                        <Input
+                                            id={id}
+                                            value={deployForm.data.notes}
+                                            onChange={setDeployField('notes')}
+                                            placeholder="hal. Deployed to Warehouse Project Phase 2, Shift Schedule A"
+                                        />
+                                    )}
+                                </Field>
+                            </div>
+
+                            {/* Modal Actions */}
+                            <div className="flex justify-end gap-2 border-t border-border pt-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setDeployModal({
+                                            open: false,
+                                            client: null,
+                                            employee: null,
+                                            isEdit: false,
+                                        });
+                                        setSelectedCandidate(null);
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button type="submit" disabled={deployForm.processing}>
+                                    <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                                    {deployModal.isEdit
+                                        ? 'Update Deployment & Contract'
+                                        : 'Confirm & Deploy to Client'}
+                                </Button>
+                            </div>
+                        </form>
+                    )}
                 </div>
             </Modal>
 
+            {/* Create Client Modal */}
             <Modal
                 show={creating}
                 onClose={() => setCreating(false)}
@@ -832,14 +1348,14 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                 description="Deployed employees are filed against a client; payroll and billing group by it."
                 maxWidth="2xl"
             >
-                <form onSubmit={submit} className="space-y-4">
+                <form onSubmit={submitCreate} className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Field label="Code" required error={form.errors.code}>
                             {({ id }) => (
                                 <Input
                                     id={id}
                                     value={form.data.code}
-                                    onChange={set('code')}
+                                    onChange={setClientField('code')}
                                     error={form.errors.code}
                                     placeholder="MTL"
                                 />
@@ -851,7 +1367,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Input
                                     id={id}
                                     value={form.data.name}
-                                    onChange={set('name')}
+                                    onChange={setClientField('name')}
                                     error={form.errors.name}
                                 />
                             )}
@@ -862,7 +1378,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Input
                                     id={id}
                                     value={form.data.industry}
-                                    onChange={set('industry')}
+                                    onChange={setClientField('industry')}
                                 />
                             )}
                         </Field>
@@ -876,11 +1392,11 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Select
                                     id={id}
                                     value={form.data.wage_region}
-                                    onChange={set('wage_region')}
+                                    onChange={setClientField('wage_region')}
                                     placeholder="Select region"
                                     options={wageRegions.map((region) => ({
                                         value: region.value,
-                                        label: region.label,
+                                        label: `${region.label} (Floor: ${formatCurrency(region.daily_minimum)}/day)`,
                                     }))}
                                 />
                             )}
@@ -891,7 +1407,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Input
                                     id={id}
                                     value={form.data.contact_person}
-                                    onChange={set('contact_person')}
+                                    onChange={setClientField('contact_person')}
                                 />
                             )}
                         </Field>
@@ -901,7 +1417,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Input
                                     id={id}
                                     value={form.data.contact_number}
-                                    onChange={set('contact_number')}
+                                    onChange={setClientField('contact_number')}
                                 />
                             )}
                         </Field>
@@ -912,7 +1428,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                     id={id}
                                     type="email"
                                     value={form.data.contact_email}
-                                    onChange={set('contact_email')}
+                                    onChange={setClientField('contact_email')}
                                     error={form.errors.contact_email}
                                 />
                             )}
@@ -923,7 +1439,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <Input
                                     id={id}
                                     value={form.data.address}
-                                    onChange={set('address')}
+                                    onChange={setClientField('address')}
                                 />
                             )}
                         </Field>
@@ -933,7 +1449,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <DateInput
                                     id={id}
                                     value={form.data.contract_start}
-                                    onChange={set('contract_start')}
+                                    onChange={setClientField('contract_start')}
                                 />
                             )}
                         </Field>
@@ -947,7 +1463,7 @@ export default function Clients({ clients, deployable = [], filters, summary, wa
                                 <DateInput
                                     id={id}
                                     value={form.data.contract_end}
-                                    onChange={set('contract_end')}
+                                    onChange={setClientField('contract_end')}
                                     error={form.errors.contract_end}
                                 />
                             )}

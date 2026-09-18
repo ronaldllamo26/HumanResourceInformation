@@ -54,6 +54,11 @@ class UserFactory extends Factory
         return $this->state(fn () => ['role' => $role]);
     }
 
+    public function superAdmin(): static
+    {
+        return $this->role(User::ROLE_SUPER_ADMIN);
+    }
+
     public function admin(): static
     {
         return $this->role(User::ROLE_ADMIN);

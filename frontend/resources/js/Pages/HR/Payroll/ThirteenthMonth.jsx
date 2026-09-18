@@ -54,7 +54,6 @@ export default function ThirteenthMonth({ rows, totals, filters, years, deadline
                     value={totals.employees}
                     icon={Users}
                     tone={totals.employees > 0 ? 'primary' : 'muted'}
-                    hint={`with earnings in ${filters.year}`}
                 />
 
                 <StatCard
@@ -62,7 +61,6 @@ export default function ThirteenthMonth({ rows, totals, filters, years, deadline
                     value={formatCurrency(totals.basic_earned)}
                     icon={Wallet}
                     tone={totals.basic_earned > 0 ? 'info' : 'muted'}
-                    hint="lateness and unpaid leave already taken off"
                 />
 
                 {/* The figure that has to be paid by 24 December. Primary, not
@@ -72,7 +70,6 @@ export default function ThirteenthMonth({ rows, totals, filters, years, deadline
                     value={formatCurrency(totals.amount)}
                     icon={Wallet}
                     tone={totals.amount > 0 ? 'primary' : 'muted'}
-                    hint="basic earned ÷ 12"
                 />
             </div>
 

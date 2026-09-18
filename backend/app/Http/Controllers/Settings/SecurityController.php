@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountChangeRequest;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\OtpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -84,8 +86,98 @@ class SecurityController extends Controller
                 'otp_enabled' => (bool) ($user->otp_enabled ?? true),
                 'otp_verified' => $user->otp_email_verified_at !== null,
                 'ttl_minutes' => max(1, (int) ceil((int) config('otp.ttl_seconds', 120) / 60)),
+                'can_disable' => false,
             ],
+
+            'is_super_admin' => $user->isSuperAdmin(),
+
+            'changeRequests' => AccountChangeRequest::where('user_id', $user->id)
+                ->with('decider:id,name')
+                ->latest()
+                ->get()
+                ->map(fn (AccountChangeRequest $r) => [
+                    'id' => $r->id,
+                    'current_username' => $r->current_username,
+                    'requested_username' => $r->requested_username,
+                    'current_email' => $r->current_email,
+                    'requested_email' => $r->requested_email,
+                    'staff_notes' => $r->staff_notes,
+                    'status' => $r->status,
+                    'decided_by' => $r->decider?->name,
+                    'decided_at' => $r->decided_at?->toIso8601String(),
+                    'admin_notes' => $r->admin_notes,
+                    'created_at' => $r->created_at?->toIso8601String(),
+                ]),
         ]);
+    }
+
+    /**
+     * Submit an account change request for Super Admin review.
+     */
+    public function storeChangeRequest(Request $request): RedirectResponse
+    {
+        Gate::authorize('managePersonal', Setting::class);
+
+        $user = $request->user();
+
+        $hasPending = AccountChangeRequest::where('user_id', $user->id)
+            ->pending()
+            ->exists();
+
+        if ($hasPending) {
+            return back()->with('error', 'You already have a pending change request under review by the Super Administrator.');
+        }
+
+        $validated = $request->validate([
+            'requested_username' => ['nullable', 'string', 'max:100'],
+            'requested_email' => ['nullable', 'email:rfc', 'max:180'],
+            'staff_notes' => ['required', 'string', 'min:5', 'max:1000'],
+        ], [
+            'staff_notes.required' => 'Please provide notes or a reason explaining why you need this credential change.',
+            'staff_notes.min' => 'Notes must be at least 5 characters.',
+        ]);
+
+        $reqUsername = filled($validated['requested_username'] ?? null)
+            ? trim($validated['requested_username'])
+            : null;
+        $reqEmail = filled($validated['requested_email'] ?? null)
+            ? strtolower(trim($validated['requested_email']))
+            : null;
+
+        if (blank($reqUsername) && blank($reqEmail)) {
+            return back()->with('error', 'Please specify a new username, a new email, or both.');
+        }
+
+        if ($reqUsername !== null) {
+            $fullUsername = User::withDomain($reqUsername);
+            if ($fullUsername === $user->username) {
+                $reqUsername = null;
+            } else {
+                if (User::where('username', $fullUsername)->where('id', '!=', $user->id)->exists()) {
+                    return back()->with('error', "The requested username '{$fullUsername}' is already taken.");
+                }
+            }
+        }
+
+        if ($reqEmail !== null && strtolower((string) $user->otp_email) === $reqEmail) {
+            $reqEmail = null;
+        }
+
+        if (blank($reqUsername) && blank($reqEmail)) {
+            return back()->with('error', 'Requested username and/or email must be different from your current credentials.');
+        }
+
+        AccountChangeRequest::create([
+            'user_id' => $user->id,
+            'current_username' => $user->username,
+            'requested_username' => $reqUsername,
+            'current_email' => $user->otp_email,
+            'requested_email' => $reqEmail,
+            'staff_notes' => $validated['staff_notes'],
+            'status' => AccountChangeRequest::STATUS_PENDING,
+        ]);
+
+        return back()->with('success', 'Your change request has been submitted to the Super Administrator for review.');
     }
 
     public function updateOtpEmail(Request $request): RedirectResponse
@@ -103,17 +195,25 @@ class SecurityController extends Controller
 
         $user = $request->user();
         $hasEnabledInput = array_key_exists('otp_enabled', $validated);
-        $newStatus = $hasEnabledInput ? (bool) $validated['otp_enabled'] : (bool) ($user->otp_enabled ?? true);
+
+        // Disabling multi-factor authentication is strictly prohibited in settings
+        if ($hasEnabledInput && ! (bool) $validated['otp_enabled']) {
+            return back()->withErrors([
+                'otp_enabled' => 'Multi-Factor Authentication is mandatory and cannot be disabled in account settings.',
+            ]);
+        }
+
+        $newStatus = true;
 
         $hasEmailInput = array_key_exists('otp_email', $validated);
         $address = $hasEmailInput
             ? (filled($validated['otp_email'] ?? null) ? strtolower(trim($validated['otp_email'])) : null)
             : $user->otp_email;
 
-        // If enabling, require a valid email address
-        if ($newStatus && blank($address)) {
+        // Require a valid email address
+        if (blank($address)) {
             return back()->withErrors([
-                'otp_email' => 'Please provide a valid Gmail address to enable two-factor authentication.',
+                'otp_email' => 'Please provide a valid Gmail address to configure multi-factor authentication.',
             ]);
         }
 
@@ -190,6 +290,7 @@ class SecurityController extends Controller
 
         $user->update([
             'password' => $validated['password'],
+            'visible_password' => Crypt::encryptString($validated['password']),
             'must_change_password' => false,
         ]);
 

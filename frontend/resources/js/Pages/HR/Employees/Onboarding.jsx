@@ -50,7 +50,6 @@ export default function Onboarding({ rows, summary, filters, departments }) {
                     value={summary.incomplete}
                     icon={Users}
                     tone={summary.incomplete > 0 ? 'warning' : 'muted'}
-                    hint="missing at least one requirement"
                     href={drillTo({})}
                 />
 
@@ -64,7 +63,6 @@ export default function Onboarding({ rows, summary, filters, departments }) {
                     icon={OctagonAlert}
                     tone="destructive"
                     iconTone={summary.blocking > 0 ? 'destructive' : 'muted'}
-                    hint={`of ${summary.incomplete} incomplete`}
                     href={drillTo({ blocking: '1' })}
                 />
 
@@ -73,7 +71,6 @@ export default function Onboarding({ rows, summary, filters, departments }) {
                     value={summary.missing_documents}
                     icon={FileWarning}
                     tone={summary.missing_documents > 0 ? 'warning' : 'muted'}
-                    hint="across every incomplete file"
                 />
 
                 {/* Non-blocking on purpose: a missing government number does
@@ -84,7 +81,6 @@ export default function Onboarding({ rows, summary, filters, departments }) {
                     value={summary.missing_numbers}
                     icon={IdCard}
                     tone={summary.missing_numbers > 0 ? 'info' : 'muted'}
-                    hint="cannot be included in a filing"
                 />
             </div>
 

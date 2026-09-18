@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { CalendarRange, Play, Plus, X } from 'lucide-react';
+import { CalendarRange, Play, Plus, Trash2, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Badge,
@@ -43,6 +43,22 @@ const RUN_STAGE_LABEL = {
 
 export default function Index({ periods, suggestion, filters, can }) {
     const [createOpen, setCreateOpen] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const confirmDelete = () => {
+        if (!deleteTarget) return;
+
+        setDeleting(true);
+        router.delete(`/hr/payroll/periods/${deleteTarget.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setDeleteTarget(null);
+                setDeleting(false);
+            },
+            onError: () => setDeleting(false),
+        });
+    };
 
     // Pre-filled with the next cut-off so HR is not typing dates by hand.
     const form = useForm({ ...suggestion });
@@ -186,6 +202,22 @@ export default function Index({ periods, suggestion, filters, can }) {
                                                         {period.run ? 'Recompute' : 'Compute'}
                                                     </Button>
                                                 )}
+
+                                            {can.delete &&
+                                                !['approved', 'paid'].includes(
+                                                    period.run?.status,
+                                                ) && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                        onClick={() => setDeleteTarget(period)}
+                                                        title="Delete payroll run"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                        Delete
+                                                    </Button>
+                                                )}
                                         </div>
                                     </TD>
                                 </TR>
@@ -283,6 +315,31 @@ export default function Index({ periods, suggestion, filters, can }) {
                         </Button>
                     </div>
                 </form>
+            </Modal>
+
+            <Modal
+                show={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                title="Delete Payroll Run"
+                description={
+                    deleteTarget?.run
+                        ? `Are you sure you want to delete ${deleteTarget.name} (${deleteTarget.run.run_number})? This will permanently remove the payroll run and all computed payslips.`
+                        : `Are you sure you want to delete the payroll period ${deleteTarget?.name}?`
+                }
+                maxWidth="md"
+            >
+                <div className="flex justify-end gap-2 pt-4">
+                    <Button
+                        variant="outline"
+                        onClick={() => setDeleteTarget(null)}
+                        disabled={deleting}
+                    >
+                        Cancel
+                    </Button>
+                    <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+                        {deleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </div>
             </Modal>
         </AppLayout>
     );

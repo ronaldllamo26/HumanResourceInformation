@@ -104,24 +104,18 @@ export default function ScanAccuracy({
                 />
                 <CardBody>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <Tile
-                            label="Scans"
-                            value={totals.scans}
-                            hint={`${totals.filed} filed, ${totals.abandoned} abandoned`}
-                        />
+                        <Tile label="Scans" value={totals.scans} />
                         {/* The headline. "How often does this just work" is the
                             question a reader has; a per-field average is not
                             an answer to it. */}
                         <Tile
                             label="Filed with nothing corrected"
                             value={totals.clean_rate === null ? '—' : `${totals.clean_rate}%`}
-                            hint={`${totals.clean} of ${totals.filed}`}
                             tone="text-chart-1"
                         />
                         <Tile
                             label="Individual fields kept"
                             value={totals.field_rate === null ? '—' : `${totals.field_rate}%`}
-                            hint={`${totals.fields_kept} of ${totals.fields_offered} offered`}
                         />
                         <Tile
                             label="Median scan"
@@ -130,7 +124,6 @@ export default function ScanAccuracy({
                                     ? '—'
                                     : `${(totals.median_ms / 1000).toFixed(1)}s`
                             }
-                            hint="Median, not mean — a cold model skews the average"
                             icon={Timer}
                         />
                     </div>

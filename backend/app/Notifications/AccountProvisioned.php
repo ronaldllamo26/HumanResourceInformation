@@ -33,6 +33,7 @@ class AccountProvisioned extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $roleLabel = match ($this->role) {
+            User::ROLE_SUPER_ADMIN => 'Super Administrator',
             User::ROLE_ADMIN => 'Administrator',
             User::ROLE_HR_STAFF => 'HR Staff',
             User::ROLE_SUPERVISOR => 'Supervisor',
@@ -40,18 +41,24 @@ class AccountProvisioned extends Notification
             default => ucfirst($this->role),
         };
 
+        $fromAddress = config('mail.from.address') ?: 'gavegavebenavidez@gmail.com';
+        $fromName = config('mail.from.name') ?: 'PrimePower Manpower HRIS';
+        $mailer = config('mail.default', 'smtp');
+
         return (new MailMessage)
+            ->mailer($mailer)
+            ->from($fromAddress, $fromName)
             ->subject('Your PrimePower HRIS Account Credentials')
-            ->greeting("Hello {$notifiable->name},")
-            ->line('An account has been created for you on the PrimePower Human Resource Information System.')
-            ->line("**Role:** {$roleLabel}")
-            ->line("**Company Username:** `{$notifiable->username}`")
-            ->line("**Registered Gmail:** `{$notifiable->otp_email}`")
-            ->line("**Temporary Password:** `{$this->temporaryPassword}`")
-            ->line('You can sign in using either your Company Username or your registered Gmail address along with the temporary password above.')
-            ->line('**Security Reminders:**')
-            ->line('1. You will be required to change this temporary password to your own permanent password upon your first login.')
-            ->line('2. Two-Factor Authentication (OTP) is active on your account. Sign-in verification codes will be delivered to this Gmail address.')
+            ->greeting('PrimePower Account Credentials')
+
+            ->line('Your employee account has been created by the Administrator.')
+            ->line('Your sign-in company username and email are:')
+            ->line('Username: **'.$notifiable->username.'**')
+            ->line('Email: **'.($notifiable->otp_email ?: $notifiable->email).'**')
+            ->line('Your temporary password is:')
+            ->line('**'.$this->temporaryPassword.'**')
+            ->action('Sign In to PrimePower', url('/login'))
+            ->line('This password is temporary. You will be asked to set your own password upon your first sign-in.')
             ->line('If you were not expecting this account, please contact your PrimePower HR administrator.');
     }
 }

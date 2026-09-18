@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AttendanceLog;
 use App\Models\ClientTimesheet;
 use App\Models\Department;
+use App\Models\DocumentScan;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\LeaveRequest;
@@ -12,12 +13,16 @@ use App\Models\OvertimeRequest;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
 use App\Models\PerformanceReview;
+use App\Models\Setting;
 use App\Models\TimeCorrection;
 use App\Models\User;
 use App\Services\CredentialExpiryScanner;
+use App\Services\DocumentScanner;
 use App\Services\EmployeeService;
 use App\Services\LeaveService;
 use App\Services\PerformanceScorer;
+use App\Services\ScanAccuracyReport;
+use App\Services\ScannerCorrectionMemory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -47,6 +52,9 @@ class DashboardController extends Controller
         private readonly CredentialExpiryScanner $credentials,
         private readonly LeaveService $leave,
         private readonly PerformanceScorer $scorer,
+        private readonly ScanAccuracyReport $accuracy,
+        private readonly ScannerCorrectionMemory $memory,
+        private readonly DocumentScanner $scanner,
     ) {}
 
     public function __invoke(Request $request): mixed
@@ -79,6 +87,7 @@ class DashboardController extends Controller
             'leaveSummary' => $canViewCompanyFigures ? $this->leaveSummary($today) : null,
             'payrollSummary' => $canViewCompanyFigures ? $this->payrollSummary() : null,
             'onboardingSummary' => $this->onboardingSummary($scoped, $today),
+            'scannerSummary' => $this->scannerSummary($request->user()),
             'recentHires' => (clone $scoped)
                 ->whereNotNull('date_hired')
                 ->orderByDesc('date_hired')
@@ -365,6 +374,122 @@ class DashboardController extends Controller
                 'status' => $latest->employment_status,
             ],
         ];
+    }
+
+    /**
+     * How the one AI feature in the system is actually doing, and what it has
+     * learned from being corrected.
+     *
+     * The scanner was the only feature with no presence on this screen at all,
+     * which made it the one thing nobody checked unless they went looking. Its
+     * whole justification is that a licence keyed a year late is a driver the
+     * system believes is legal to dispatch — so how often it reads a document
+     * correctly is a figure that belongs where the figures are read.
+     *
+     * **Every number is `ScanAccuracyReport`'s, not this controller's.** A
+     * clean rate computed here would be a private copy of the rules, and the
+     * day it disagreed with the Scanner Accuracy screen the reader would have
+     * two answers about one scanner and no way to tell which was right. The
+     * window comes from `scanner.accuracy.default_days` for the same reason,
+     * so the card and the screen measure the same months.
+     *
+     * **Gated on the ability that guards the screen it links to**, asked of
+     * the policy rather than borrowed from `viewCompanyFigures` above. The two
+     * are the same set of people today and are answering different questions —
+     * one is "may this person read company money", the other is "may this
+     * person read the audit trail" — and a card that linked into a 403 would
+     * tell the reader there is something behind it *and* that they are not
+     * trusted with it, which is the least useful pair of facts a screen can
+     * offer.
+     *
+     * The cost is one indexed query over the window on each dashboard load,
+     * which is what the Scanner Accuracy screen already pays. If
+     * `document_scans` ever grows past what that can carry, the answer is a
+     * stored daily rollup both screens read — not a cheaper rate derived here.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function scannerSummary(User $user): ?array
+    {
+        if (! $user->can('viewAuditLog', Setting::class)) {
+            return null;
+        }
+
+        $days = (int) config('scanner.accuracy.default_days', 90);
+
+        $scans = DocumentScan::with('employee:id,first_name,middle_name,last_name,suffix')
+            ->where('created_at', '>=', Carbon::today()->subDays($days)->startOfDay())
+            ->get();
+
+        /*
+         * Nothing scanned and no key configured: there is no feature here to
+         * report on, so the card is not drawn at all rather than drawn empty.
+         * A dark feature is not a broken one — but a card of dashes is how a
+         * reader concludes it is broken.
+         *
+         * Scans on record with the driver since switched off still draw: the
+         * measurement is history and stays worth reading.
+         */
+        if ($scans->isEmpty() && ! $this->scanner->isEnabled()) {
+            return null;
+        }
+
+        $report = $this->accuracy->build($scans);
+        $totals = $report['totals'];
+        $latest = $report['recent'][0] ?? null;
+
+        return [
+            'days' => $days,
+            'scans' => $totals['scans'],
+
+            // Null with nothing filed, and the card prints that as "—".
+            // Rendering it as 0% would report a scanner that has never been
+            // wrong as one that is never right.
+            'clean_rate' => $totals['clean_rate'],
+
+            // What a person had to type over: the figure the feature exists to
+            // drive down, and the only one on the card somebody can act on.
+            'corrected' => $totals['filed'] - $totals['clean'],
+
+            /*
+             * The "train your AI" half. Null rather than a count when the
+             * feedback is switched off (`SCANNER_LEARNING=false`), because the
+             * rules are still *derivable* while nothing is reading them — and
+             * a tile claiming the system learned nine things while it is
+             * applying none of them is the card telling a lie about itself.
+             */
+            'learning_enabled' => $this->memory->isEnabled(),
+            'learned' => $this->memory->isEnabled() ? $this->memory->rules()->count() : null,
+
+            'latest' => $latest === null ? null : [
+                'title' => $latest['employee'] ?? 'Not filed against anybody',
+                'subtitle' => $this->scanOutcome($latest),
+                'outcome' => $latest['outcome'],
+            ],
+        ];
+    }
+
+    /**
+     * One line saying what happened to the most recent scan.
+     *
+     * The type is named because it is the reading most likely to be wrong and
+     * the one `resolveType()` ranks five sources to decide — "Corrected" on its
+     * own says a person disagreed without saying about what.
+     *
+     * @param  array<string, mixed>  $scan
+     */
+    private function scanOutcome(array $scan): string
+    {
+        $type = $scan['saved_type'] ?? $scan['proposed_type'] ?? null;
+        $label = $type === null
+            ? 'no type settled'
+            : (config('scanner.labels.'.$type) ?? str_replace('_', ' ', (string) $type));
+
+        return match ($scan['outcome']) {
+            'clean' => 'Read correctly — '.$label,
+            'corrected' => 'Corrected by HR — filed as '.$label,
+            default => 'Scanned but never filed',
+        };
     }
 
     /** @return array<string, mixed> */

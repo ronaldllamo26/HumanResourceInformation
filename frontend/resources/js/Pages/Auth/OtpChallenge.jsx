@@ -112,47 +112,64 @@ export default function OtpChallenge({
                             aria-hidden="true"
                         />
                         <p className="text-xs text-foreground">
-                            The code could not be sent to {sentTo}. The company mail settings
-                            are not working — tell your administrator, who can also switch the
-                            code off if mail stays down.
+                            The code could not be sent to {sentTo}. The mail settings may need
+                            attention — tell your administrator, or click &ldquo;Send a new
+                            code&rdquo; below to retry.
                         </p>
                     </div>
-                ) : isExpired ? (
-                    <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                        <div>
-                            <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                                Sign-in code has expired (2-minute limit)
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                                The code sent to <span className="font-medium text-foreground">{sentTo}</span> has expired. Click <strong>&ldquo;Send a new code&rdquo;</strong> below to receive a fresh one.
-                            </p>
-                        </div>
-                    </div>
                 ) : (
-                    <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3.5">
+                    <div
+                        className={cn(
+                            'mt-3 rounded-lg border p-3.5 transition-colors',
+                            isExpired
+                                ? 'border-amber-500/30 bg-amber-500/10'
+                                : 'border-primary/20 bg-primary/5',
+                        )}
+                    >
                         <div className="flex items-center justify-between text-xs">
                             <span className="text-muted-foreground">
                                 Sent to: <strong className="text-foreground">{sentTo}</strong>
                             </span>
-                            <span className="inline-flex items-center gap-1 font-mono font-bold text-primary">
+                            <span
+                                className={cn(
+                                    'inline-flex items-center gap-1 font-mono font-bold',
+                                    isExpired
+                                        ? 'text-amber-700 dark:text-amber-400'
+                                        : 'text-primary',
+                                )}
+                            >
                                 <Clock className="h-3.5 w-3.5" />
-                                {expiresSeconds >= 60
-                                    ? `${Math.floor(expiresSeconds / 60)}m ${String(expiresSeconds % 60).padStart(2, '0')}s left`
-                                    : `${expiresSeconds}s left`}
+                                {isExpired
+                                    ? '0s (Expired)'
+                                    : expiresSeconds >= 60
+                                      ? `${Math.floor(expiresSeconds / 60)}m ${String(expiresSeconds % 60).padStart(2, '0')}s left`
+                                      : `${expiresSeconds}s left`}
                             </span>
                         </div>
-                        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary/60">
                             <div
                                 className={cn(
                                     'h-full transition-all duration-1000',
-                                    expiresSeconds <= 20 ? 'bg-amber-500' : 'bg-primary',
+                                    isExpired
+                                        ? 'w-0 bg-amber-500'
+                                        : expiresSeconds <= 20
+                                          ? 'bg-amber-500'
+                                          : 'bg-primary',
                                 )}
                                 style={{
-                                    width: `${Math.min(100, Math.max(0, (expiresSeconds / 120) * 100))}%`,
+                                    width: isExpired
+                                        ? '0%'
+                                        : `${Math.min(100, Math.max(0, (expiresSeconds / Math.max(expiresIn, 120)) * 100))}%`,
                                 }}
                             />
                         </div>
+                        {isExpired && (
+                            <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300">
+                                This code has expired. Click{' '}
+                                <strong>&ldquo;Send a new code&rdquo;</strong> below for a fresh
+                                one.
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -186,7 +203,7 @@ export default function OtpChallenge({
                         size="lg"
                         className="w-full"
                         loading={form.processing}
-                        disabled={form.processing || isExpired}
+                        disabled={form.processing || form.data.code.trim().length === 0}
                     >
                         <MailCheck className="h-4 w-4" />
                         Verify and sign in
@@ -196,20 +213,23 @@ export default function OtpChallenge({
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
                     <Button
                         type="button"
-                        variant={isExpired ? 'default' : 'ghost'}
+                        variant={isExpired ? 'default' : 'secondary'}
                         size="sm"
                         onClick={resend}
                         disabled={resendSeconds > 0 || isResending}
-                        className={cn(
-                            isExpired && 'font-semibold shadow-sm',
-                        )}
+                        className={cn('transition-all', isExpired && 'font-semibold shadow-sm')}
                     >
-                        <RotateCw className={cn('mr-1.5 h-3.5 w-3.5', (resendSeconds > 0 || isResending) && 'animate-spin')} />
+                        <RotateCw
+                            className={cn(
+                                'mr-1.5 h-3.5 w-3.5',
+                                (resendSeconds > 0 || isResending) && 'animate-spin',
+                            )}
+                        />
                         {isResending
                             ? 'Sending code...'
                             : resendSeconds > 0
-                            ? `Send a new code in ${resendSeconds}s`
-                            : 'Send a new code'}
+                              ? `Send a new code in ${resendSeconds}s`
+                              : 'Send a new code'}
                     </Button>
 
                     <Button variant="ghost" size="sm" onClick={() => router.post('/logout')}>

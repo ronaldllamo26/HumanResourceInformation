@@ -107,7 +107,6 @@ export default function Separations({
                     value={pending.length}
                     icon={DoorOpen}
                     tone={pending.length > 0 ? 'warning' : 'muted'}
-                    hint={pending.length > 0 ? 'settlements still open' : 'nothing outstanding'}
                 />
 
                 {/* Past a statutory deadline, so destructive rather than
@@ -118,7 +117,6 @@ export default function Separations({
                     value={overdue.length}
                     icon={CalendarClock}
                     tone={overdue.length > 0 ? 'destructive' : 'muted'}
-                    hint={`${releaseWithinDays} days from the last day`}
                 />
 
                 <StatCard
@@ -126,7 +124,6 @@ export default function Separations({
                     value={formatCurrency(payable)}
                     icon={Wallet}
                     tone={payable > 0 ? 'info' : 'muted'}
-                    hint="across open settlements"
                 />
             </div>
 

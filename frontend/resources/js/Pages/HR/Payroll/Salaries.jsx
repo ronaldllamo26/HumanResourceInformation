@@ -146,7 +146,6 @@ export default function Salaries({ adjustments, filters, reasons, summary, emplo
                     value={formatCurrency(summary.payroll)}
                     icon={Wallet}
                     tone={summary.payroll > 0 ? 'primary' : 'muted'}
-                    hint="basic salary across active employees"
                 />
 
                 <StatCard
@@ -154,7 +153,6 @@ export default function Salaries({ adjustments, filters, reasons, summary, emplo
                     value={summary.this_year}
                     icon={Banknote}
                     tone={summary.this_year > 0 ? 'info' : 'muted'}
-                    hint="raises, corrections, and demotions"
                 />
 
                 {/* Not a warning — a future-dated raise is a decision already
@@ -165,7 +163,6 @@ export default function Salaries({ adjustments, filters, reasons, summary, emplo
                     value={summary.scheduled}
                     icon={CalendarClock}
                     tone={summary.scheduled > 0 ? 'info' : 'muted'}
-                    hint="take effect on their own date"
                 />
             </div>
 

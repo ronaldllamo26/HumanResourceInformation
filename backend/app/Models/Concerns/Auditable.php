@@ -3,6 +3,7 @@
 namespace App\Models\Concerns;
 
 use App\Models\AuditLog;
+use App\Services\ImpersonationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Auth;
@@ -57,6 +58,18 @@ trait Auditable
 
         AuditLog::create([
             'user_id' => Auth::id(),
+            /*
+             * Who was really at the keyboard.
+             *
+             * During an impersonation `Auth::id()` is the employee, so without
+             * this every row an administrator writes while impersonating would
+             * be filed under the person it was done to — an administrator's
+             * edit appearing in the trail as the employee's own. Read straight
+             * from the session rather than through the service, because this
+             * runs inside a model event and a container resolution here would
+             * fire on every audited write in the system.
+             */
+            'impersonated_by' => session(ImpersonationService::SESSION_KEY),
             'auditable_type' => static::class,
             'auditable_id' => $this->getKey(),
             'event' => $event,

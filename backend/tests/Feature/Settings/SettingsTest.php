@@ -133,7 +133,7 @@ class SettingsTest extends TestCase
 
     public function test_an_admin_can_create_an_account(): void
     {
-        $this->actingAs($this->admin())
+        $this->actingAs(User::factory()->superAdmin()->create())
             ->post('/settings/users', [
                 'name' => 'Nina Cruz',
                 'username' => 'nina',
@@ -153,7 +153,7 @@ class SettingsTest extends TestCase
     {
         Notification::fake();
 
-        $this->actingAs($this->admin())
+        $this->actingAs(User::factory()->superAdmin()->create())
             ->post('/settings/users', [
                 'name' => 'Maria Santos',
                 'username' => 'mariasantos',
@@ -185,7 +185,7 @@ class SettingsTest extends TestCase
                 $this->assertNotEmpty($notification->temporaryPassword);
 
                 return true;
-            }
+            },
         );
     }
 
@@ -257,6 +257,50 @@ class SettingsTest extends TestCase
 
         $this->assertFalse($user->fresh()->is_active);
         $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_super_admin_can_delete_user_account(): void
+    {
+        $superAdmin = User::factory()->superAdmin()->create();
+        $user = User::factory()->create();
+        $user->createToken('device');
+
+        $this->actingAs($superAdmin)
+            ->delete("/settings/users/{$user->id}")
+            ->assertRedirect();
+
+        $this->assertSoftDeleted('users', ['id' => $user->id]);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_super_admin_cannot_delete_themselves(): void
+    {
+        $superAdmin = User::factory()->superAdmin()->create();
+
+        $this->actingAs($superAdmin)
+            ->delete("/settings/users/{$superAdmin->id}")
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('users', ['id' => $superAdmin->id]);
+    }
+
+    public function test_admin_can_update_user_email_and_profile(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->create(['otp_email' => 'old@gmail.com']);
+
+        $this->actingAs($admin)
+            ->put("/settings/users/{$user->id}/profile", [
+                'name' => 'Updated Name',
+                'username' => 'updated.user@primepower.com',
+                'otp_email' => 'new.email@gmail.com',
+            ])
+            ->assertRedirect();
+
+        $user->refresh();
+        $this->assertSame('Updated Name', $user->name);
+        $this->assertSame('updated.user@primepower.com', $user->username);
+        $this->assertSame('new.email@gmail.com', $user->otp_email);
     }
 
     // --- Security ---------------------------------------------------------

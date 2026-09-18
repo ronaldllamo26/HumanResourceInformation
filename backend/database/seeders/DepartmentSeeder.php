@@ -21,7 +21,7 @@ class DepartmentSeeder extends Seeder
             ],
         ],
         'HRIS' => [
-            'name' => 'Human Resource Information System',
+            'name' => 'Human Resource Information Management',
             'description' => 'Oversees core workforce records, master data, employee profiles, and system access.',
             'positions' => [
                 ['HRIS-MGR', 'HRIS Lead Manager', 'SG-18', 50000, 70000],
@@ -30,21 +30,39 @@ class DepartmentSeeder extends Seeder
             ],
         ],
         'CNB' => [
-            'name' => 'Compliance and Benefits',
-            'description' => 'Manages statutory compliance, compensation policies, mandatory benefits, and labor standards.',
+            'name' => 'Employee Development, Compliance and Benefits',
+            'description' => 'Runs training and development, statutory compliance, mandatory benefits, and labor standards.',
             'positions' => [
-                ['CNB-MGR', 'Compliance & Benefits Manager', 'SG-18', 45000, 65000],
+                ['CNB-MGR', 'Employee Development & Benefits Manager', 'SG-18', 45000, 65000],
+                /*
+                 * Development is the half this department gained when it was
+                 * renamed, so it needs somebody to do it: a compliance officer
+                 * and a benefits specialist between them do not run a training
+                 * calendar, and the Qualifications section on a 201 file is
+                 * where completed trainings are recorded.
+                 */
+                ['CNB-TRN', 'Training & Development Officer', 'SG-14', 30000, 45000],
+                ['CNB-LND', 'Learning & Development Specialist', 'SG-12', 25000, 38000],
                 ['CNB-CMP', 'Labor Standards Compliance Officer', 'SG-14', 30000, 45000],
                 ['CNB-BEN', 'Compensation & Benefits Specialist', 'SG-12', 25000, 38000],
             ],
         ],
         'GSA' => [
-            'name' => 'Governance Safety & Safety Administration',
+            // Was "Governance Safety & Safety Administration", which said
+            // safety twice and read as a typo rather than a department.
+            'name' => 'Governance, Safety and Administration',
             'description' => 'Directs organizational governance, occupational safety standards, risk mitigation, and protocols.',
             'positions' => [
                 ['GSA-DIR', 'Governance & Safety Director', 'SG-20', 60000, 85000],
-                ['GSA-SOF', 'Safety Administration Officer', 'SG-14', 30000, 45000],
+                /*
+                 * "Safety Officer" is the title DOLE accredits under OSH
+                 * Standards (D.O. 198-18), and a fleet operator is required to
+                 * have one — so the title is the regulator's rather than an
+                 * invented one.
+                 */
+                ['GSA-SOF', 'Safety Officer', 'SG-14', 30000, 45000],
                 ['GSA-INS', 'Safety Inspector & Compliance Auditor', 'SG-12', 25000, 38000],
+                ['GSA-ADM', 'Governance & Administration Officer', 'SG-12', 25000, 38000],
             ],
         ],
         'FIN' => [
@@ -66,8 +84,51 @@ class DepartmentSeeder extends Seeder
                 ['SCI-LOG', 'Fleet Logistics Coordinator', 'SG-10', 20000, 30000],
             ],
         ],
+        /*
+         * Fleet & Transportation Management — the department that was missing
+         * from this list entirely, on a Fleet & Transportation HRIS.
+         *
+         * It matters more than its position count suggests: this is where the
+         * **deployable** workforce sits. Every other department here is the
+         * agency running itself (`employment_category` internal); these are
+         * largely the people billed to a client, and they are the reason
+         * `LicenseVerifier`, the DL codes, the conditions and Deployment
+         * Readiness exist at all.
+         *
+         * **The driver titles carry the word "Driver" deliberately.**
+         * `config('onboarding.by_position')` matches the fragment `driver` and
+         * requires a driver's licence as a **blocking** document — so a title
+         * worded "Motor Vehicle Operator" would quietly create a role the 201
+         * File Status screen never asks a licence of, and the first anybody
+         * would know is a dispatcher sending out somebody with nothing on
+         * file. The title is doing work here, not just labelling.
+         */
+        'FTM' => [
+            'name' => 'Fleet & Transportation Management',
+            'description' => 'Runs vehicle operations, dispatch, driver deployment, and fleet maintenance for the agency and its clients.',
+            'positions' => [
+                ['FTM-MGR', 'Fleet & Transportation Manager', 'SG-18', 45000, 65000],
+                ['FTM-SUP', 'Transport Operations Supervisor', 'SG-14', 30000, 45000],
+                ['FTM-DSP', 'Dispatcher', 'SG-10', 20000, 30000],
+                // The bulk deployable role, and the one the licence rules are
+                // written for.
+                ['FTM-DRV', 'Professional Driver', 'SG-08', 18000, 26000],
+                ['FTM-DRH', 'Heavy Vehicle Driver', 'SG-10', 22000, 32000],
+                /*
+                 * Deliberately *not* worded with "driver": an operator works
+                 * a machine rather than driving on a public road, so the
+                 * blocking licence requirement does not apply to them — and
+                 * the honest cost of that is stated rather than worked around
+                 * by bending the title. If a licence should be required of
+                 * operators too, that is a line in `config/onboarding.php`,
+                 * not a word smuggled into a job title.
+                 */
+                ['FTM-HEO', 'Heavy Equipment Operator', 'SG-10', 20000, 32000],
+                ['FTM-MEC', 'Vehicle Maintenance Technician', 'SG-10', 20000, 30000],
+            ],
+        ],
         'FAM' => [
-            'name' => 'Facilities & Administrative Management',
+            'name' => 'Facilities & Administration Management',
             'description' => 'Maintains building facilities, office administration, physical resources, and general services.',
             'positions' => [
                 ['FAM-MGR', 'Facilities & Admin Manager', 'SG-18', 45000, 65000],
@@ -76,7 +137,7 @@ class DepartmentSeeder extends Seeder
             ],
         ],
         'BIA' => [
-            'name' => 'Business Intelligence & Analytics',
+            'name' => 'Business Intelligence & Analytics System',
             'description' => 'Drives business reporting, KPI monitoring, data analytics, and executive intelligence.',
             'positions' => [
                 ['BIA-MGR', 'BI & Analytics Manager', 'SG-18', 55000, 80000],

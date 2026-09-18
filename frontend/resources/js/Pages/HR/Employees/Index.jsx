@@ -191,7 +191,6 @@ export default function Index({
                     value={statistics.total}
                     icon={Users}
                     tone="primary"
-                    hint={filters.search ? 'matching this search' : 'on the books'}
                     href={drillTo({})}
                 />
 
@@ -205,7 +204,6 @@ export default function Index({
                     icon={UserCheck}
                     tone={activeRate >= 90 ? 'success' : 'warning'}
                     iconTone="success"
-                    hint={`of ${statistics.total} on the books`}
                     href={drillTo({ status: 'active' })}
                 />
 
@@ -216,7 +214,6 @@ export default function Index({
                     value={statistics.on_leave}
                     icon={CalendarClock}
                     tone={statistics.on_leave > 0 ? 'info' : 'muted'}
-                    hint="away today, still on the roster"
                     href={drillTo({ status: 'on_leave' })}
                 />
 
@@ -227,7 +224,6 @@ export default function Index({
                     value={statistics.probationary}
                     icon={UserX}
                     tone={statistics.probationary > 0 ? 'warning' : 'muted'}
-                    hint="awaiting regularisation"
                     href={drillTo({ employment_status: 'probationary' })}
                 />
             </div>

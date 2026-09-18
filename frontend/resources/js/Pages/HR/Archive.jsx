@@ -1,6 +1,14 @@
 import { router } from '@inertiajs/react';
-import { useState } from 'react';
-import { Archive as ArchiveIcon, Handshake, RotateCcw, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+    Archive as ArchiveIcon,
+    Briefcase,
+    Handshake,
+    KeyRound,
+    RotateCcw,
+    Shield,
+    Users,
+} from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Badge,
@@ -18,16 +26,21 @@ import {
     Table,
     TableEmpty,
 } from '@/Components/ui';
-import { formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
-export default function Archive({ rows, filters, summary, window: restoreWindow }) {
+export default function Archive({ rows = [], filters, summary, window: restoreWindow }) {
     const [pending, setPending] = useState(null);
+    const [activeCategory, setActiveCategory] = useState(filters?.category || 'all');
 
     const confirmRestore = () => {
-        const path =
-            pending.kind === 'employee'
-                ? `/hr/archive/employees/${pending.id}/restore`
-                : `/hr/archive/clients/${pending.id}/restore`;
+        if (!pending) return;
+
+        let path = `/hr/archive/employees/${pending.id}/restore`;
+        if (pending.kind === 'user') {
+            path = `/hr/archive/users/${pending.id}/restore`;
+        } else if (pending.kind === 'client') {
+            path = `/hr/archive/clients/${pending.id}/restore`;
+        }
 
         router.post(path, {}, { preserveScroll: true, onFinish: () => setPending(null) });
     };
@@ -35,47 +48,93 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
     const search = (value) =>
         router.get(
             '/hr/archive',
-            { search: value || undefined },
+            {
+                search: value || undefined,
+                category: activeCategory !== 'all' ? activeCategory : undefined,
+            },
             { preserveState: true, preserveScroll: true, replace: true },
         );
 
+    const selectCategory = (categoryKey) => {
+        setActiveCategory(categoryKey);
+    };
+
+    const filteredRows = useMemo(() => {
+        if (activeCategory === 'all') return rows;
+        return rows.filter((row) => row.kind === activeCategory);
+    }, [rows, activeCategory]);
+
+    const categories = [
+        {
+            key: 'all',
+            label: 'All Records',
+            count: rows.length,
+            icon: ArchiveIcon,
+        },
+        {
+            key: 'employee',
+            label: 'Employees',
+            count: summary.employees ?? 0,
+            icon: Users,
+        },
+        {
+            key: 'user',
+            label: 'User Accounts',
+            count: summary.users ?? 0,
+            icon: KeyRound,
+        },
+        {
+            key: 'client',
+            label: 'Clients',
+            count: summary.clients ?? 0,
+            icon: Handshake,
+        },
+    ];
+
     return (
         <AppLayout
-            title="Archive"
+            title="Archive Module"
             breadcrumbs={[
                 { label: 'Human Resource' },
                 { label: 'Employee Information', href: '/hr/employees' },
                 { label: 'Archive' },
             ]}
         >
-            <div className="mb-5 grid gap-4 sm:grid-cols-3">
+            <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Archived Employees"
                     value={summary.employees}
                     icon={Users}
                     tone={summary.employees > 0 ? 'info' : 'muted'}
-                    hint="201 files kept in full"
+                />
+                <StatCard
+                    label="Archived User Accounts"
+                    value={summary.users}
+                    icon={KeyRound}
+                    tone={summary.users > 0 ? 'warning' : 'muted'}
                 />
                 <StatCard
                     label="Archived Clients"
                     value={summary.clients}
                     icon={Handshake}
                     tone={summary.clients > 0 ? 'info' : 'muted'}
-                    hint="payslips keep the client they were filed under"
                 />
                 <StatCard
                     label="Deleted Recently"
                     value={summary.within_window}
                     icon={ArchiveIcon}
                     tone={summary.within_window > 0 ? 'warning' : 'muted'}
-                    hint={`Within the last ${restoreWindow} days`}
                 />
             </div>
 
             <Card>
-                <CardHeader
-                    title="Deleted Records"
-                    action={
+                <div className="border-b border-border p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="text-base font-semibold text-foreground">
+                                Archive & Recycle Bin
+                            </h2>
+                        </div>
                         <div className="w-full sm:w-64">
                             <SearchInput
                                 defaultValue={filters.search ?? ''}
@@ -84,34 +143,71 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
                                 aria-label="Search the archive"
                             />
                         </div>
-                    }
-                />
+                    </div>
+
+                    {/* Category Filter Tabs */}
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+                        <span className="mr-1 text-xs font-medium text-muted-foreground">
+                            Category:
+                        </span>
+                        {categories.map((cat) => {
+                            const IconComponent = cat.icon;
+                            const isSelected = activeCategory === cat.key;
+                            return (
+                                <button
+                                    key={cat.key}
+                                    type="button"
+                                    onClick={() => selectCategory(cat.key)}
+                                    className={cn(
+                                        'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                                        isSelected
+                                            ? 'bg-primary text-primary-foreground shadow-sm'
+                                            : 'bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground',
+                                    )}
+                                >
+                                    <IconComponent className="h-3.5 w-3.5" />
+                                    <span>{cat.label}</span>
+                                    <span
+                                        className={cn(
+                                            'py-0.2 ml-1 rounded-full px-1.5 text-[10px] tabular-nums',
+                                            isSelected
+                                                ? 'bg-primary-foreground/20 text-primary-foreground'
+                                                : 'bg-background/80 text-muted-foreground',
+                                        )}
+                                    >
+                                        {cat.count}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
 
                 <Table>
                     <THead>
                         <TR>
                             <TH>Record</TH>
-                            <TH>Type</TH>
-                            <TH>Filed Under</TH>
-                            <TH>Deleted</TH>
-                            <TH className="text-right" />
+                            <TH>Type / Category</TH>
+                            <TH>Details / Context</TH>
+                            <TH>Date Deleted</TH>
+                            <TH className="text-right">Action</TH>
                         </TR>
                     </THead>
 
                     <TBody>
-                        {rows.length === 0 ? (
+                        {filteredRows.length === 0 ? (
                             <TableEmpty
                                 colSpan={5}
                                 icon={ArchiveIcon}
                                 title={
                                     filters.search
                                         ? 'Nothing archived matches that search'
-                                        : 'Nothing has been deleted'
+                                        : `No ${activeCategory === 'all' ? 'records' : activeCategory + 's'} currently in the archive`
                                 }
-                                description="Deleted employees and clients are kept here so a mis-click costs a click to undo."
+                                description="Deleted records are kept here safely so they can be restored whenever needed."
                             />
                         ) : (
-                            rows.map((row) => (
+                            filteredRows.map((row) => (
                                 <TR key={`${row.kind}-${row.id}`}>
                                     <TD>
                                         <p className="font-medium text-foreground">
@@ -123,9 +219,24 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
                                     </TD>
 
                                     <TD>
-                                        <Badge variant="muted">
-                                            {row.kind === 'employee' ? 'Employee' : 'Client'}
-                                        </Badge>
+                                        {row.kind === 'employee' && (
+                                            <Badge variant="info" className="gap-1">
+                                                <Users className="h-3 w-3" />
+                                                Employee
+                                            </Badge>
+                                        )}
+                                        {row.kind === 'user' && (
+                                            <Badge variant="warning" className="gap-1">
+                                                <KeyRound className="h-3 w-3" />
+                                                User Account
+                                            </Badge>
+                                        )}
+                                        {row.kind === 'client' && (
+                                            <Badge variant="muted" className="gap-1">
+                                                <Handshake className="h-3 w-3" />
+                                                Client
+                                            </Badge>
+                                        )}
                                     </TD>
 
                                     <TD className="text-sm">
@@ -141,9 +252,6 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
                                         <p className="text-foreground">
                                             {formatDate(row.deleted_at)}
                                         </p>
-                                        {/* The window changes how a row reads, not
-                                            whether it survives — nothing here
-                                            expires. */}
                                         <p
                                             className={
                                                 row.within_window
@@ -162,8 +270,9 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
                                             size="sm"
                                             variant="outline"
                                             onClick={() => setPending(row)}
+                                            className="hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
                                         >
-                                            <RotateCcw className="h-4 w-4" />
+                                            <RotateCcw className="mr-1 h-3.5 w-3.5" />
                                             Restore
                                         </Button>
                                     </TD>
@@ -174,29 +283,26 @@ export default function Archive({ rows, filters, summary, window: restoreWindow 
                 </Table>
             </Card>
 
-            <p className="mt-4 text-xs text-muted-foreground">
-                Records are kept indefinitely, not for {restoreWindow} days — employment records
-                must be held three years under the Labor Code and payroll records ten under the
-                NIRC. The {restoreWindow}-day mark only highlights recent deletions.
-            </p>
-
+            {/* Confirmation Modal */}
             <Modal
                 show={pending !== null}
                 onClose={() => setPending(null)}
-                title="Restore this record?"
+                title="Restore this archived record?"
                 description={
                     pending?.kind === 'employee'
-                        ? `${pending?.name} goes back into the directory as active, and their login is re-enabled if they had one.`
-                        : `${pending?.name} goes back onto the client list and can be assigned deployments again.`
+                        ? `${pending?.name} (${pending?.reference}) will be restored into the Employee Directory as Active (Regular). If they have a linked user account, it will also be reactivated.`
+                        : pending?.kind === 'user'
+                          ? `The login account for ${pending?.name} (${pending?.reference}) will be restored and reactivated. If an associated employee profile was archived, it will also be restored to the Employee Directory.`
+                          : `${pending?.name} goes back onto the active client list and can be assigned deployments again.`
                 }
             >
-                <div className="flex justify-end gap-2">
+                <div className="mt-4 flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setPending(null)}>
                         Cancel
                     </Button>
                     <Button onClick={confirmRestore}>
-                        <RotateCcw className="h-4 w-4" />
-                        Restore
+                        <RotateCcw className="mr-1 h-4 w-4" />
+                        Confirm & Restore
                     </Button>
                 </div>
             </Modal>

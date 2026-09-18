@@ -79,4 +79,81 @@ class SettingPolicy
     {
         return $user->isHrAdmin();
     }
+
+    /**
+     * Reviewing, approving, and rejecting account change requests from staff.
+     * Both Administrator and Super Administrator have access.
+     */
+    public function manageAccountRequests(User $user): bool
+    {
+        return $user->isAdmin();
+    }
+
+    /**
+     * Viewing plaintext/decrypted staff passwords.
+     * Restricted strictly to Super Administrator.
+     */
+    public function viewStaffPasswords(User $user): bool
+    {
+        return $user->isSuperAdmin();
+    }
+
+    /**
+     * Signing in as another account to reproduce what they are seeing.
+     *
+     * Super administrator only, and not shared with `isAdmin()` the way
+     * `manageAccountRequests` is. An administrator can already reset a
+     * password and read the audit log, which covers support and accountability
+     * between them; impersonation is the one ability that lets somebody *act*
+     * as another person, and the narrowest possible holder is the right one
+     * for it. Which accounts may be impersonated is a separate question, and
+     * `ImpersonationService::refusalReason()` answers it — a super
+     * administrator may not be impersonated at all, including by a peer.
+     */
+    public function impersonate(User $user): bool
+    {
+        return $user->isSuperAdmin();
+    }
+
+    /**
+     * Seeing who is signed in, and signing them out.
+     *
+     * Also super administrator only. Ending somebody's session is a response
+     * to a suspected breach rather than an HR task, and the session list is
+     * itself sensitive: it is every signed-in person's address and device,
+     * which is a map of the workforce's whereabouts that nothing else in this
+     * system hands over.
+     */
+    public function manageSessions(User $user): bool
+    {
+        return $user->isSuperAdmin();
+    }
+
+    /** Deleting user accounts is strictly Super Administrator only. */
+    public function deleteUser(User $user): bool
+    {
+        return $user->isSuperAdmin();
+    }
+
+    /**
+     * Taking a copy of the whole database out of the building.
+     *
+     * Super administrator only, and **not** `manage` — which is what the rest
+     * of the Data & Backup screen sits behind. Editing how long the audit
+     * trail is kept and downloading every payslip, government identifier and
+     * bank account in the company are not the same act, and they happen to be
+     * on the same screen only because both are about data.
+     *
+     * It is a new ability rather than a reuse of `manageSessions` for the
+     * reason `viewArchive` is separate from `restore`: these are two different
+     * questions and an ability that answers both is one nobody can narrow
+     * later. A dump is the most complete export this system can produce — it
+     * carries the ciphertext of every encrypted column, which `APP_KEY` is the
+     * only thing standing between and plaintext — so it gets the narrowest
+     * holder there is.
+     */
+    public function backupDatabase(User $user): bool
+    {
+        return $user->isSuperAdmin();
+    }
 }

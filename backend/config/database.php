@@ -21,6 +21,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dump binary
+    |--------------------------------------------------------------------------
+    |
+    | Where `pg_dump` is, for the backup on Settings → Data & Backup. Left
+    | unset, `DatabaseBackup` looks on the PATH and then in the places a
+    | Windows installer puts it, newest version first.
+    |
+    | It is worth setting when a machine carries two PostgreSQL installations
+    | and the wrong one is on the PATH — this one does: the 16 binary here dies
+    | on a missing CRT DLL while the 18 one works and reads the 16 server
+    | perfectly. A newer `pg_dump` reads an older server; the reverse refuses.
+    |
+    */
+    'dump_binary' => env('DB_DUMP_BINARY'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Database Connections
     |--------------------------------------------------------------------------
     |

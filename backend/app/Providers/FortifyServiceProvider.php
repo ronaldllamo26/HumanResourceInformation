@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -66,10 +67,9 @@ class FortifyServiceProvider extends ServiceProvider
                 ->orWhereRaw('lower(name) = ?', [strtolower($input)])
                 ->first();
 
-
-
             if (! $user) {
-                \Illuminate\Support\Facades\Log::warning("Sign-in attempt failed: user '{$input}' not found.");
+                Log::warning("Sign-in attempt failed: user '{$input}' not found.");
+
                 return null;
             }
 
@@ -85,7 +85,8 @@ class FortifyServiceProvider extends ServiceProvider
             }
 
             if (! $matches) {
-                \Illuminate\Support\Facades\Log::warning("Sign-in attempt failed: password mismatch for user '{$user->username}'. Sent length: " . strlen($password));
+                Log::warning("Sign-in attempt failed: password mismatch for user '{$user->username}'. Sent length: ".strlen($password));
+
                 return null;
             }
 

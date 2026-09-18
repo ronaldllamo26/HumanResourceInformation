@@ -66,7 +66,7 @@ class PayrollRunPolicy
 
     public function delete(User $user, PayrollRun $run): bool
     {
-        return $user->isHrAdmin() && $run->isEditable();
+        return $user->isHrAdmin() && ! $run->isFinal();
     }
 
     public function manageCompensation(User $user): bool

@@ -78,7 +78,6 @@ export default function Overtime({ requests, filters, summary, can }) {
                     value={summary.pending}
                     icon={Hourglass}
                     tone={summary.pending > 0 ? 'warning' : 'muted'}
-                    hint="pays nothing until approved"
                     href={withFilters('/hr/timekeeping/overtime', filters, {
                         status: 'pending',
                     })}
@@ -88,7 +87,6 @@ export default function Overtime({ requests, filters, summary, can }) {
                     value={summary.approved_hours}
                     icon={CircleCheck}
                     tone={summary.approved_hours > 0 ? 'success' : 'muted'}
-                    hint="paid at 125% of the hourly rate"
                     href={withFilters('/hr/timekeeping/overtime', filters, {
                         status: 'approved',
                     })}

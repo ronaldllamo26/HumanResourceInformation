@@ -616,6 +616,31 @@ return [
         'max_rules' => 50,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Measuring the scanner
+    |--------------------------------------------------------------------------
+    |
+    | The window Scanner Accuracy reports over when nobody has picked one, and
+    | the same window the dashboard's summary card reads.
+    |
+    | It lives here rather than in either of them because **two copies of it
+    | would disagree the first time one was tuned** — and disagree silently, in
+    | the worst way: a card reading 87% beside a screen reading 81% for the
+    | same scanner, with nothing on either saying they were measured over
+    | different months. It is the same reasoning `idle.timeout` is shared from
+    | one config value rather than restated in the component that counts down.
+    |
+    | Ninety days rather than the month the other screens default to, because
+    | this is a measurement and a measurement wants a sample: a month of a
+    | small agency's uploads is a handful of scans, and a rate over a handful
+    | is noise being reported as a finding.
+    |
+    */
+    'accuracy' => [
+        'default_days' => 90,
+    ],
+
     'autofile' => [
         'enabled' => (bool) env('SCANNER_AUTOFILE', true),
 

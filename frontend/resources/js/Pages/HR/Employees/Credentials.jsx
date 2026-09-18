@@ -79,7 +79,6 @@ export default function Credentials({
                     value={summary.total}
                     icon={CalendarClock}
                     tone={summary.total > 0 ? 'warning' : 'muted'}
-                    hint="lapsed or inside its renewal window"
                     href={drillTo({})}
                 />
 
@@ -93,7 +92,6 @@ export default function Credentials({
                     icon={ShieldX}
                     tone="destructive"
                     iconTone={summary.expired > 0 ? 'destructive' : 'muted'}
-                    hint={`of ${summary.total} needing attention`}
                     href={drillTo({ status: 'expired' })}
                 />
 
@@ -102,7 +100,6 @@ export default function Credentials({
                     value={summary.expiring}
                     icon={ShieldAlert}
                     tone={summary.expiring > 0 ? 'warning' : 'muted'}
-                    hint="still time to renew"
                     href={drillTo({ status: 'expiring' })}
                 />
 
@@ -114,7 +111,6 @@ export default function Credentials({
                     value={summary.blocking}
                     icon={ShieldX}
                     tone={summary.blocking > 0 ? 'destructive' : 'muted'}
-                    hint="licence or medical — cannot legally work"
                     href={drillTo({ blocking: '1' })}
                 />
             </div>

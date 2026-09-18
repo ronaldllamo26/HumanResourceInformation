@@ -194,7 +194,7 @@ export default function IdleTimeout() {
             const seen = Math.max(lastActivity.current, readActivity(0));
             lastActivity.current = seen;
 
-            const idleFor = (at - seen) / 1000;
+            const idleFor = Math.max(0, (at - seen) / 1000);
             const remaining = Math.ceil(timeout - idleFor);
 
             if (remaining <= 0) {
@@ -229,26 +229,30 @@ export default function IdleTimeout() {
         <Modal
             show
             onClose={stayActive}
-            title="Still there?"
+            title="Session Timeout Warning"
             maxWidth="sm"
-            /* Closing it *is* the answer — clicking anywhere to dismiss is
-               somebody at the keyboard, which is the only thing being asked. */
             closeable
         >
             <div className="flex items-start gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-warning/10 text-warning">
+                <span className="grid h-10 w-10 shrink-0 animate-pulse place-items-center rounded-full bg-warning/15 text-warning ring-2 ring-warning/30">
                     <Clock className="h-5 w-5" aria-hidden="true" />
                 </span>
 
                 <div className="min-w-0">
-                    <p className="text-sm text-foreground">
-                        You will be signed out in{' '}
-                        <span className="font-semibold tabular-nums">{secondsLeft}</span> second
-                        {secondsLeft === 1 ? '' : 's'}.
+                    <p className="text-sm font-semibold text-foreground">
+                        Are you still there?
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        This screen is left signed in on shared machines, so it closes itself.
-                        Anything unsaved on the page behind this will be lost.
+                    <p className="mt-1 text-sm text-foreground">
+                        You will be signed out in{' '}
+                        <span className="font-bold tabular-nums text-destructive">
+                            {secondsLeft}
+                        </span>{' '}
+                        second
+                        {secondsLeft === 1 ? '' : 's'} due to inactivity.
+                    </p>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                        Any unsaved work will be lost. Click &ldquo;Stay signed in&rdquo; to
+                        continue working.
                     </p>
                 </div>
             </div>

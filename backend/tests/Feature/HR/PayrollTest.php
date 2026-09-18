@@ -443,6 +443,66 @@ class PayrollTest extends TestCase
         $this->assertSame(0.0, app(PayrollService::class)->gatherInputs($period, $employee)['unpaid_leave_days']);
     }
 
+    public function test_hr_can_delete_a_payroll_period_with_draft_or_no_run(): void
+    {
+        $run = $this->generatedRun();
+        $period = $run->period;
+
+        $this->assertDatabaseHas('payroll_periods', ['id' => $period->id]);
+        $this->assertDatabaseHas('payroll_runs', ['id' => $run->id]);
+        $this->assertDatabaseHas('payslips', ['payroll_run_id' => $run->id]);
+
+        $this->actingAs($this->hr())
+            ->delete("/hr/payroll/periods/{$period->id}")
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('payroll_periods', ['id' => $period->id]);
+        $this->assertDatabaseMissing('payroll_runs', ['id' => $run->id]);
+        $this->assertDatabaseMissing('payslips', ['payroll_run_id' => $run->id]);
+    }
+
+    public function test_hr_cannot_delete_a_payroll_period_with_an_approved_run(): void
+    {
+        $run = $this->approvedRun();
+        $period = $run->period;
+
+        $this->actingAs($this->hr())
+            ->delete("/hr/payroll/periods/{$period->id}")
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('payroll_periods', ['id' => $period->id]);
+        $this->assertDatabaseHas('payroll_runs', ['id' => $run->id]);
+    }
+
+    public function test_hr_can_delete_a_draft_or_cancelled_payroll_run(): void
+    {
+        $run = $this->generatedRun();
+        $period = $run->period;
+
+        $this->actingAs($this->hr())
+            ->delete("/hr/payroll/runs/{$run->id}")
+            ->assertRedirect('/hr/payroll')
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('payroll_runs', ['id' => $run->id]);
+        $this->assertDatabaseMissing('payslips', ['payroll_run_id' => $run->id]);
+        // The period remains
+        $this->assertDatabaseHas('payroll_periods', ['id' => $period->id]);
+    }
+
+    public function test_hr_cannot_delete_an_approved_or_paid_payroll_run(): void
+    {
+        $run = $this->approvedRun();
+
+        $this->actingAs($this->hr())
+            ->delete("/hr/payroll/runs/{$run->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('payroll_runs', ['id' => $run->id]);
+    }
+
     // --- Helpers ------------------------------------------------------------
 
     private function hr(): User

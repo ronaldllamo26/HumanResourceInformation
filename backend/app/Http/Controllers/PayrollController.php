@@ -10,6 +10,7 @@ use App\Services\PayrollService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -86,7 +87,10 @@ class PayrollController extends Controller
             ],
             'suggestion' => $this->suggestNextPeriod(),
             'filters' => ['run_status' => $runStatus],
-            'can' => ['create' => $request->user()->can('create', PayrollRun::class)],
+            'can' => [
+                'create' => $request->user()->can('create', PayrollRun::class),
+                'delete' => $request->user()->can('create', PayrollRun::class),
+            ],
         ]);
     }
 
@@ -212,6 +216,7 @@ class PayrollController extends Controller
                 'approve' => $request->user()->can('approve', $payrollRun),
                 'markPaid' => $request->user()->can('markPaid', $payrollRun),
                 'cancel' => $request->user()->can('cancel', $payrollRun),
+                'delete' => $request->user()->can('delete', $payrollRun),
             ],
         ]);
     }
@@ -273,6 +278,48 @@ class PayrollController extends Controller
         $this->payroll->cancel($payrollRun, $validated['remarks'] ?? null);
 
         return back()->with('success', 'Payroll run cancelled.');
+    }
+
+    public function destroyPeriod(PayrollPeriod $payrollPeriod): RedirectResponse
+    {
+        Gate::authorize('create', PayrollRun::class);
+
+        if ($payrollPeriod->runs()->whereIn('status', [
+            PayrollRun::STATUS_APPROVED,
+            PayrollRun::STATUS_PAID,
+        ])->exists()) {
+            return back()->with('error', 'Cannot delete a payroll period with an approved or paid run.');
+        }
+
+        $name = $payrollPeriod->name;
+
+        DB::transaction(function () use ($payrollPeriod) {
+            foreach ($payrollPeriod->runs as $run) {
+                $run->payslips()->delete();
+                $run->delete();
+            }
+            $payrollPeriod->delete();
+        });
+
+        return back()->with('success', "Payroll period {$name} deleted.");
+    }
+
+    public function destroyRun(PayrollRun $payrollRun): RedirectResponse
+    {
+        Gate::authorize('delete', $payrollRun);
+
+        if ($payrollRun->isFinal()) {
+            return back()->with('error', 'Cannot delete an approved or paid payroll run.');
+        }
+
+        $runNumber = $payrollRun->run_number;
+
+        DB::transaction(function () use ($payrollRun) {
+            $payrollRun->payslips()->delete();
+            $payrollRun->delete();
+        });
+
+        return redirect()->route('hr.payroll')->with('success', "Payroll run {$runNumber} deleted.");
     }
 
     /**

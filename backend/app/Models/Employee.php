@@ -90,6 +90,18 @@ class Employee extends Model
             || in_array($this->employment_status, self::SEPARATED_STATUSES, true);
     }
 
+    public function contractHasLapsed(): bool
+    {
+        return $this->contract_end !== null && $this->contract_end->isPast();
+    }
+
+    public function contractExpiringSoon(int $days = 30): bool
+    {
+        return $this->contract_end !== null
+            && ! $this->contract_end->isPast()
+            && $this->contract_end->lte(now()->addDays($days));
+    }
+
     // --- Relationships -----------------------------------------------------
 
     public function user(): BelongsTo
@@ -116,6 +128,11 @@ class Employee extends Model
     public function supervisor(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'supervisor_id');
+    }
+
+    public function userWithTrashed(): BelongsTo
+    {
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     /** Who last recorded an LTMS check against this licence. */
@@ -362,6 +379,8 @@ class Employee extends Model
             'date_hired' => 'date',
             'date_regularized' => 'date',
             'date_separated' => 'date',
+            'contract_start' => 'date',
+            'contract_end' => 'date',
             'license_expiry' => 'date',
             // A timestamp, not a date: the recorded LTMS check is a moment
             // somebody acted, and the staleness window is counted from it.

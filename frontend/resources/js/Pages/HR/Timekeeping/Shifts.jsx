@@ -1,6 +1,6 @@
-import { router, useForm } from '@inertiajs/react';
+import { router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { CalendarRange, Clock, Moon, Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
+import { CalendarRange, Clock, Moon, Plus, Trash2, UserPlus } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Badge,
@@ -42,7 +42,11 @@ const BLANK_ASSIGNMENT = {
     effective_to: '',
 };
 
-export default function Shifts({ shifts, assignments, filters, employees, weekdays }) {
+export default function Shifts({ shifts, assignments, filters, employees, weekdays, can }) {
+    const { auth } = usePage().props;
+    const canCreateShift =
+        can?.createShift ??
+        (auth?.user?.role === 'admin' || auth?.user?.role === 'super_admin');
     const [shiftModal, setShiftModal] = useState(null);
     const [assigning, setAssigning] = useState(false);
     const shiftForm = useForm(BLANK_SHIFT);
@@ -124,10 +128,12 @@ export default function Shifts({ shifts, assignments, filters, employees, weekda
                 <CardHeader
                     title="Shifts"
                     action={
-                        <Button onClick={() => openShift()}>
-                            <Plus className="h-4 w-4" />
-                            New Shift
-                        </Button>
+                        canCreateShift ? (
+                            <Button onClick={() => openShift()}>
+                                <Plus className="h-4 w-4" />
+                                New Shift
+                            </Button>
+                        ) : null
                     }
                 />
                 <Table>
@@ -140,13 +146,12 @@ export default function Shifts({ shifts, assignments, filters, employees, weekda
                             <TH className="text-right">Grace</TH>
                             <TH className="text-right">People</TH>
                             <TH>Status</TH>
-                            <TH className="text-right">Actions</TH>
                         </TR>
                     </THead>
                     <TBody>
                         {shifts.length === 0 ? (
                             <TableEmpty
-                                colSpan={8}
+                                colSpan={7}
                                 icon={Clock}
                                 title="No shifts yet"
                                 description="Without a shift, lateness and undertime cannot be computed."
@@ -180,26 +185,6 @@ export default function Shifts({ shifts, assignments, filters, employees, weekda
                                         <Badge variant={shift.is_active ? 'success' : 'muted'}>
                                             {shift.is_active ? 'Active' : 'Inactive'}
                                         </Badge>
-                                    </TD>
-                                    <TD className="text-right">
-                                        <div className="flex justify-end gap-1">
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                onClick={() => openShift(shift)}
-                                                aria-label="Edit shift"
-                                            >
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                onClick={() => removeShift(shift)}
-                                                aria-label="Remove shift"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
                                     </TD>
                                 </TR>
                             ))

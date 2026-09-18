@@ -166,12 +166,6 @@ export default function History({ employee, history, weights }) {
                                         </dl>
                                     </div>
                                 ))}
-
-                                <p className="border-t border-border pt-3 text-xs text-muted-foreground">
-                                    Perspectives that did not review are re-normalised rather
-                                    than counted as zero, so a missing peer review never drags
-                                    the score down.
-                                </p>
                             </div>
                         )}
                     </CardBody>

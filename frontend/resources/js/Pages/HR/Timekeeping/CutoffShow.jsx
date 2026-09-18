@@ -107,7 +107,6 @@ export default function CutoffShow({ period, cutoff, outstanding, rows, can, err
                         value={outstanding.incomplete}
                         icon={CircleAlert}
                         tone={outstanding.incomplete > 0 ? 'destructive' : 'muted'}
-                        hint="complete the record or approve a correction"
                         href={`/hr/timekeeping?status=incomplete&${range}`}
                     />
                     <StatCard

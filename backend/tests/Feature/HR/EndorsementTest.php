@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\HR;
 
+use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Employee;
@@ -177,27 +178,40 @@ class EndorsementTest extends TestCase
     }
 
     /**
-     * The direct door stays accountable: with no endorsement to record who
-     * decided and why, the reason is required instead.
+     * A direct add needs no reason, and this test is the inverse of the one
+     * it replaces.
+     *
+     * The field was required — an endorsement records that somebody decided,
+     * who, and why, and with no endorsement behind a direct add the typed
+     * reason stood in for the third of those. It was removed on the owner's
+     * instruction. Asserted rather than deleted, because a requirement that
+     * simply stops being tested is one nobody can tell was dropped on purpose
+     * from one that rotted.
      */
-    public function test_a_direct_add_without_a_reason_creates_nobody(): void
+    public function test_a_direct_add_needs_no_reason(): void
     {
         $this->actingAs($this->hr())
             ->post('/hr/employees', $this->employeePayload(['endorsement_id' => null]))
-            ->assertSessionHasErrors('direct_hire_reason');
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
 
-        $this->assertDatabaseCount('employees', 0);
+        $this->assertDatabaseCount('employees', 1);
     }
 
-    public function test_a_direct_add_with_a_reason_creates_the_employee_and_logs_why(): void
+    /**
+     * The act is still recorded even though the explanation is not.
+     *
+     * `direct_hire` names who added whom, when and from where, so a hire that
+     * skipped recruitment is still visible in the trail — only the *why* is
+     * gone. Keeping this asserted is what stops the row going with the field
+     * the next time somebody tidies up around here.
+     */
+    public function test_a_direct_add_is_still_logged_as_one(): void
     {
         $hr = $this->hr();
 
         $this->actingAs($hr)
-            ->post('/hr/employees', $this->employeePayload([
-                'endorsement_id' => null,
-                'direct_hire_reason' => 'Rehire of a former driver, approved by operations.',
-            ]))
+            ->post('/hr/employees', $this->employeePayload(['endorsement_id' => null]))
             ->assertSessionHasNoErrors()
             ->assertRedirect();
 
@@ -208,6 +222,12 @@ class EndorsementTest extends TestCase
             'user_id' => $hr->id,
             'auditable_id' => $employee->id,
         ]);
+
+        // And the row no longer carries a reason, so re-adding the field
+        // without re-adding the write would fail here rather than silently
+        // logging nothing.
+        $row = AuditLog::where('event', 'direct_hire')->sole();
+        $this->assertArrayNotHasKey('reason', $row->new_values);
     }
 
     public function test_a_missing_endorsement_id_still_goes_back_to_the_inbox(): void

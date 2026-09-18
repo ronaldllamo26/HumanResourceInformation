@@ -137,15 +137,6 @@ function PositionBlock({ position, open, onToggle, onMove }) {
                     <h3 className="truncate text-sm font-semibold text-foreground">
                         {position.title}
                     </h3>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                        <span className="font-mono">{position.code}</span>
-                        {position.department && ` · ${position.department}`}
-                        {position.salary_grade && ` · ${position.salary_grade}`}
-                    </p>
-                </div>
-
-                <div className="hidden shrink-0 sm:block">
-                    <Band min={position.min_salary} max={position.max_salary} />
                 </div>
 
                 {/* Deactivated is not deleted — the title stays listed so the
@@ -167,17 +158,11 @@ function PositionBlock({ position, open, onToggle, onMove }) {
                 />
             </button>
 
-            {open && (
+            {open && holders.length > 0 && (
                 <div className="border-t border-border">
-                    {holders.length === 0 ? (
-                        <p className="px-5 py-4 text-xs text-muted-foreground">
-                            Nobody holds this title yet.
-                        </p>
-                    ) : (
-                        holders.map((employee) => (
-                            <HolderRow key={employee.id} employee={employee} onMove={onMove} />
-                        ))
-                    )}
+                    {holders.map((employee) => (
+                        <HolderRow key={employee.id} employee={employee} onMove={onMove} />
+                    ))}
                 </div>
             )}
         </Card>
@@ -307,22 +292,20 @@ export default function Positions({
 
     return (
         <AppLayout
-            title="Departments & Positions"
+            title="Positions Registry"
             breadcrumbs={[
                 { label: 'Human Resource' },
                 { label: 'Employee Information', href: '/hr/employees' },
-                { label: 'Departments & Positions' },
+                { label: 'Departments', href: '/hr/departments' },
+                { label: 'Positions' },
             ]}
         >
-            <OrgTabs currentTab="positions" />
-
             <div className="mb-5 grid gap-4 sm:grid-cols-3">
                 <StatCard
                     label="Positions"
                     value={summary.total}
                     icon={Briefcase}
                     tone={summary.total > 0 ? 'primary' : 'muted'}
-                    hint="job titles on the org chart"
                 />
 
                 <MeterCard
@@ -333,7 +316,6 @@ export default function Positions({
                     icon={Users}
                     tone="success"
                     iconTone="success"
-                    hint={`of ${summary.total} — the rest are deactivated, not deleted`}
                 />
 
                 {/* Counted, not flagged as an error: a band is optional and
@@ -344,7 +326,6 @@ export default function Positions({
                     value={summary.without_band}
                     icon={TriangleAlert}
                     tone={summary.without_band > 0 ? 'info' : 'muted'}
-                    hint="a rate keyed here has nothing to check against"
                 />
             </div>
 
@@ -379,7 +360,10 @@ export default function Positions({
                             <span className="text-muted-foreground">
                                 Filtered by Department:{' '}
                                 <strong className="text-foreground">
-                                    {departments.find((d) => String(d.value) === String(filters.department_id))?.label ?? 'Selected Department'}
+                                    {departments.find(
+                                        (d) =>
+                                            String(d.value) === String(filters.department_id),
+                                    )?.label ?? 'Selected Department'}
                                 </strong>
                             </span>
                         </div>
@@ -393,7 +377,7 @@ export default function Positions({
                             <button
                                 type="button"
                                 onClick={() => filter('department_id', '')}
-                                className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-secondary/80 transition-colors"
+                                className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary/80"
                             >
                                 <X className="h-3 w-3" /> Clear filter
                             </button>

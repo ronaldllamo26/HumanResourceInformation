@@ -1,6 +1,6 @@
 import { router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { Sparkles, Users, Wallet } from 'lucide-react';
+import { Sparkles, Users } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Button,
@@ -102,13 +102,6 @@ export default function Balances({ year, years, types, rows, can }) {
                             options={years.map((value) => ({ value, label: value }))}
                         />
                     </div>
-
-                    <p className="text-xs text-muted-foreground sm:ml-auto">
-                        Each cell shows{' '}
-                        <span className="font-medium text-foreground">available</span> (earned +
-                        carried over − used).
-                        {can.adjust && ' Click a cell to adjust.'}
-                    </p>
                 </div>
 
                 <Table>
@@ -208,7 +201,7 @@ export default function Balances({ year, years, types, rows, can }) {
                             <span className="font-medium text-foreground">
                                 {editing?.credits.used}
                             </span>{' '}
-                            day(s). Used credits are moved by approvals, not here.
+                            day(s).
                         </p>
                     </div>
 
@@ -273,19 +266,6 @@ export default function Balances({ year, years, types, rows, can }) {
                 maxWidth="md"
             >
                 <form onSubmit={submitAccrue} className="space-y-4">
-                    <div className="flex gap-3">
-                        <Wallet
-                            className="mt-0.5 h-5 w-5 shrink-0 text-primary"
-                            aria-hidden="true"
-                        />
-                        <p className="text-sm text-muted-foreground">
-                            Credits are earned per completed month of service — a 15-day type
-                            accrues 1.25 days a month — so someone hired in November earns two
-                            months' worth, not a full year. Used credits are untouched, and
-                            re-running recomputes rather than adds.
-                        </p>
-                    </div>
-
                     <Field label="Year" required error={accrueForm.errors.year}>
                         {({ id }) => (
                             <Select

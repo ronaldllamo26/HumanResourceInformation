@@ -213,6 +213,62 @@ class ArchiveTest extends TestCase
             );
     }
 
+    public function test_the_archive_lists_deleted_users(): void
+    {
+        $user = User::factory()->create();
+        $user->delete();
+
+        $this->actingAs($this->admin())
+            ->get('/hr/archive')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('rows', 1)
+                ->where('rows.0.kind', 'user')
+                ->where('summary.users', 1),
+            );
+    }
+
+    public function test_terminating_user_archives_user_and_linked_employee(): void
+    {
+        $superAdmin = User::factory()->role(User::ROLE_SUPER_ADMIN)->create();
+        $user = User::factory()->create();
+        $employee = Employee::factory()->create(['user_id' => $user->id]);
+
+        $this->actingAs($superAdmin)
+            ->delete("/settings/users/{$user->id}")
+            ->assertRedirect();
+
+        // Both user and employee are soft-deleted
+        $this->assertNull(User::find($user->id));
+        $this->assertNotNull(User::withTrashed()->find($user->id));
+
+        $this->assertNull(Employee::find($employee->id));
+        $this->assertNotNull(Employee::withTrashed()->find($employee->id));
+        $this->assertSame('inactive', Employee::withTrashed()->find($employee->id)->status);
+        $this->assertSame('terminated', Employee::withTrashed()->find($employee->id)->employment_status);
+    }
+
+    public function test_restoring_a_user_puts_them_and_their_employee_back(): void
+    {
+        $superAdmin = User::factory()->role(User::ROLE_SUPER_ADMIN)->create();
+        $user = User::factory()->create();
+        $employee = Employee::factory()->create(['user_id' => $user->id]);
+
+        $this->actingAs($superAdmin)->delete("/settings/users/{$user->id}");
+
+        $this->actingAs($this->admin())
+            ->post("/hr/archive/users/{$user->id}/restore")
+            ->assertRedirect();
+
+        $restoredUser = User::find($user->id);
+        $this->assertNotNull($restoredUser);
+        $this->assertTrue($restoredUser->is_active);
+
+        $restoredEmployee = Employee::find($employee->id);
+        $this->assertNotNull($restoredEmployee);
+        $this->assertSame('active', $restoredEmployee->status);
+    }
+
     private function client(array $overrides = []): Client
     {
         return Client::create(array_merge([

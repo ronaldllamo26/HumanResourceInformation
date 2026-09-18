@@ -126,10 +126,6 @@ export default function Compliance({
             <Card>
                 <div className="border-b border-border p-4">
                     <p className="text-sm font-medium text-foreground">{reportLabel}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                        Read back from issued payslips, not recomputed — these are the figures
-                        the employees were actually paid.
-                    </p>
                 </div>
 
                 <Table>

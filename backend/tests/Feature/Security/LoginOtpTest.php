@@ -297,7 +297,7 @@ class LoginOtpTest extends TestCase
         $this->assertNull($user->fresh()->otp_email_verified_at);
     }
 
-    public function test_disabling_otp_requires_password_confirmation_and_disables_2fa(): void
+    public function test_disabling_otp_is_prohibited_in_settings_as_mfa_is_mandatory(): void
     {
         $user = $this->enrolled('my.personal@gmail.com');
 
@@ -308,10 +308,10 @@ class LoginOtpTest extends TestCase
                 'password' => self::PASSWORD,
             ])
             ->assertRedirect()
-            ->assertSessionHas('success');
+            ->assertSessionHasErrors('otp_enabled');
 
-        $this->assertFalse($user->fresh()->otp_enabled);
-        $this->assertFalse((new OtpService())->isRequiredFor($user->fresh()));
+        $this->assertTrue((bool) ($user->fresh()->otp_enabled ?? true));
+        $this->assertTrue((new OtpService)->isRequiredFor($user->fresh()));
     }
 
     public function test_disabling_otp_fails_with_wrong_password(): void
@@ -337,7 +337,7 @@ class LoginOtpTest extends TestCase
             'otp_enabled' => false,
         ]);
 
-        $this->assertFalse((new OtpService())->isRequiredFor($user));
+        $this->assertFalse((new OtpService)->isRequiredFor($user));
 
         $this->actingAs($user)
             ->put('/settings/security/otp', [
@@ -348,7 +348,7 @@ class LoginOtpTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertTrue($user->fresh()->otp_enabled);
-        $this->assertTrue((new OtpService())->isRequiredFor($user->fresh()));
+        $this->assertTrue((new OtpService)->isRequiredFor($user->fresh()));
     }
 
     public function test_disabled_otp_user_does_not_require_otp_on_login(): void

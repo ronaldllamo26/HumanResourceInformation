@@ -11,6 +11,7 @@ class AuditLog extends Model
 {
     protected $fillable = [
         'user_id',
+        'impersonated_by',
         'auditable_type',
         'auditable_id',
         'event',
@@ -23,6 +24,18 @@ class AuditLog extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The administrator behind an impersonated action, when there was one.
+     *
+     * `user()` stays "the account this ran as", which every existing screen
+     * and query already reads it as; this is the separate question of who was
+     * really at the keyboard.
+     */
+    public function impersonator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'impersonated_by');
     }
 
     public function auditable(): MorphTo

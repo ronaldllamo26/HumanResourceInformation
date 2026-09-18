@@ -68,12 +68,16 @@ class ShiftController extends Controller
             'filters' => ['history' => $request->boolean('history')],
             'employees' => $this->timekeeping->employeeOptions($request->user()),
             'weekdays' => collect(EmployeeShift::WEEKDAYS)->map(fn ($label, $value) => ['value' => $value, 'label' => $label])->values(),
+            'can' => [
+                'createShift' => $request->user()->isAdmin(),
+            ],
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         Gate::authorize('manage', AttendanceLog::class);
+        abort_unless($request->user()->isAdmin(), 403, 'Only administrators can create shifts.');
 
         $shift = Shift::create($this->validatedShift($request) + ['is_active' => true]);
 
