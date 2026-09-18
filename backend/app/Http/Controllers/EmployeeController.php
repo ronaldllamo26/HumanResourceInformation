@@ -553,6 +553,7 @@ class EmployeeController extends Controller
 
         abort_if($document->employee_id !== $employee->id, 404);
 
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
         $disk = Storage::disk(EmployeeService::DOCUMENT_DISK);
 
         abort_unless($disk->exists($document->file_path), 404);
@@ -625,12 +626,23 @@ class EmployeeController extends Controller
             'document' => $document->title,
         ]);
 
-        return $disk->response($document->file_path, $document->file_name, [
+        $mime = $document->mime_type ?: 'application/octet-stream';
+        $encoded = rawurlencode($document->file_name);
+
+        return new StreamedResponse(function () use ($disk, $document) {
+            $stream = $disk->readStream($document->file_path);
+            fpassthru($stream);
+            fclose($stream);
+        }, 200, [
             // Belt and braces: the stored mime type is what the browser is
             // told to render, and nosniff stops it guessing something else
             // out of a file a user uploaded.
-            'Content-Type' => $document->mime_type ?: 'application/octet-stream',
-            'X-Content-Type-Options' => 'nosniff',
+            'Content-Type'              => $mime,
+            'X-Content-Type-Options'    => 'nosniff',
+            // inline disposition causes the browser to render in-tab rather
+            // than save — the filename= fallback is used by print dialogs.
+            'Content-Disposition'       => "inline; filename=\"{$document->file_name}\"; filename*=UTF-8''{$encoded}",
+            'Content-Length'            => $disk->size($document->file_path),
         ]);
     }
 
