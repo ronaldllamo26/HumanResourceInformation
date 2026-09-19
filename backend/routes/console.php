@@ -63,6 +63,7 @@ Artisan::command('hris:set-admin-password', function () {
 
     $admin->fill([
         'name' => $admin->name ?: 'System Administrator',
+        'email' => $admin->email ?: 'admin@primepower.com',
         'role' => User::ROLE_ADMIN,
         'is_active' => true,
         'password' => $password,

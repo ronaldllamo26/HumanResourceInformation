@@ -266,6 +266,10 @@ class User extends Authenticatable
             if (blank($user->username)) {
                 $user->username = static::availableUsername((string) ($user->email ?: $user->name));
             }
+
+            if (blank($user->email)) {
+                $user->email = $user->username ?: static::availableUsername((string) $user->name);
+            }
         });
 
         /*

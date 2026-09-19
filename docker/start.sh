@@ -20,11 +20,11 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
     # terminal here to run db:seed. The generated passwords are printed to the
     # container log once. Once any account exists this does nothing, so a
     # restart never resets anybody's password.
-    php artisan hris:seed-if-empty
+    php artisan hris:seed-if-empty || true
 
     # Does nothing unless HRIS_ADMIN_PASSWORD is set in the panel. The way back
     # in when nobody knows the admin password and there is no terminal.
-    php artisan hris:set-admin-password
+    php artisan hris:set-admin-password || true
 
     # Automatically activate MFA on admin accounts with ADMIN_OTP_EMAIL
     php artisan hris:bind-admin-otp || true
