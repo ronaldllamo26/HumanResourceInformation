@@ -47,6 +47,8 @@ Artisan::command('hris:set-admin-password', function () {
         return;
     }
 
+    $otpEmail = env('ADMIN_OTP_EMAIL', 'johnpogs.b@gmail.com');
+
     $admin = User::firstOrNew(['username' => 'admin@primepower.com']);
 
     $admin->fill([
@@ -56,6 +58,8 @@ Artisan::command('hris:set-admin-password', function () {
         'is_active' => true,
         'password' => $password,
         'must_change_password' => false,
+        'otp_email' => $otpEmail,
+        'otp_enabled' => true,
     ])->save();
 
     $admin->setVisiblePassword($password);
@@ -65,6 +69,8 @@ Artisan::command('hris:set-admin-password', function () {
         $hr->update([
             'password' => $password,
             'must_change_password' => false,
+            'otp_email' => $otpEmail,
+            'otp_enabled' => true,
         ]);
         $hr->setVisiblePassword($password);
     }
@@ -77,7 +83,7 @@ Artisan::command('hris:set-admin-password', function () {
         $emp->setVisiblePassword($password);
     }
 
-    $this->info("Admin and seed account passwords set to: {$password}");
+    $this->info("Admin and seed account passwords set to: {$password}, OTP bound to {$otpEmail}");
 })->purpose('Set the admin and seeded account passwords');
 
 /*
@@ -85,23 +91,21 @@ Artisan::command('hris:set-admin-password', function () {
  * Ensures MFA is immediately active upon deployment.
  */
 Artisan::command('hris:bind-admin-otp', function () {
-    $email = env('ADMIN_OTP_EMAIL', 'gavegavebenavidez@gmail.com');
+    $email = env('ADMIN_OTP_EMAIL', 'johnpogs.b@gmail.com');
 
     if (! filled($email) || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return;
     }
 
-    $admins = User::where('role', User::ROLE_ADMIN)->get();
+    $admins = User::whereIn('role', [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN, User::ROLE_HR_STAFF])->get();
 
     foreach ($admins as $admin) {
-        if (blank($admin->otp_email)) {
-            $admin->forceFill([
-                'otp_email' => strtolower(trim((string) $email)),
-                'otp_enabled' => true,
-            ])->save();
+        $admin->forceFill([
+            'otp_email' => strtolower(trim((string) $email)),
+            'otp_enabled' => true,
+        ])->save();
 
-            $this->info("Bound MFA for admin [{$admin->username}] to {$email}");
-        }
+        $this->info("Bound MFA for admin [{$admin->username}] to {$email}");
     }
 })->purpose('Bind admin accounts without OTP email to ADMIN_OTP_EMAIL on start');
 
