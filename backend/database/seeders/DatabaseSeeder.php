@@ -193,62 +193,62 @@ class DatabaseSeeder extends Seeder
 
         $departments = Department::with('positions')->get();
 
-        // Supervisors first so the rest have someone to report to.
-        $supervisors = collect();
+        // Sample Employee 1: Juan Dela Cruz (Supervisor, Fleet & Transportation Management)
+        $dept1 = $departments->firstWhere('name', 'Fleet & Transportation Management') ?? $departments->first();
+        $pos1 = $dept1->positions->first();
 
-        foreach ($departments as $department) {
-            $position = $department->positions->first();
+        $employee1 = Employee::factory()->create([
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'department_id' => $dept1->id,
+            'position_id' => $pos1?->id,
+            'employment_status' => 'regular',
+            'basic_salary' => 65000,
+        ]);
 
-            $employee = Employee::factory()->create([
-                'department_id' => $department->id,
-                'position_id' => $position?->id,
-                'employment_status' => 'regular',
-                'basic_salary' => 65000,
-            ]);
+        $username1 = 'jdelacruz@primepower.com';
+        $plain1 = $this->seededPassword($username1);
+        $user1 = User::create([
+            'name' => $employee1->full_name,
+            'username' => $username1,
+            'email' => $username1,
+            'role' => User::ROLE_SUPERVISOR,
+            'password' => $plain1,
+            'visible_password' => Crypt::encryptString($plain1),
+            'is_active' => true,
+            'must_change_password' => false,
+        ]);
+        $employee1->update(['user_id' => $user1->id]);
+        $dept1->update(['head_employee_id' => $employee1->id]);
 
-            $username = User::usernameFor($employee->first_name, $employee->last_name);
-            $plainSup = $this->seededPassword($username);
+        // Sample Employee 2: Maria Clara (Regular Employee, Human Resource Information Management)
+        $dept2 = $departments->firstWhere('name', 'Human Resource Information Management') ?? $departments->skip(1)->first();
+        $pos2 = $dept2->positions->first();
 
-            $user = User::create([
-                'name' => $employee->full_name,
-                'username' => $username,
-                'email' => $username,
-                'role' => User::ROLE_SUPERVISOR,
-                'password' => $plainSup,
-                'visible_password' => Crypt::encryptString($plainSup),
-                'is_active' => true,
-                'must_change_password' => $this->passwordIsProvisional(),
-            ]);
+        $employee2 = Employee::factory()->create([
+            'first_name' => 'Maria',
+            'last_name' => 'Clara',
+            'department_id' => $dept2->id,
+            'position_id' => $pos2?->id,
+            'employment_status' => 'regular',
+            'basic_salary' => 45000,
+            'supervisor_id' => $employee1->id,
+        ]);
 
-            $employee->update(['user_id' => $user->id]);
-            $department->update(['head_employee_id' => $employee->id]);
+        $username2 = 'mclara@primepower.com';
+        $plain2 = $this->seededPassword($username2);
+        $user2 = User::create([
+            'name' => $employee2->full_name,
+            'username' => $username2,
+            'email' => $username2,
+            'role' => User::ROLE_EMPLOYEE,
+            'password' => $plain2,
+            'visible_password' => Crypt::encryptString($plain2),
+            'is_active' => true,
+            'must_change_password' => false,
+        ]);
+        $employee2->update(['user_id' => $user2->id]);
 
-            $supervisors->push($employee);
-        }
-
-        foreach ($departments as $department) {
-            $supervisor = $supervisors->firstWhere('department_id', $department->id);
-            $positions = $department->positions;
-            $isOperations = str_contains(strtolower($department->name), 'operations');
-
-            $count = 2;
-
-            $factory = Employee::factory()->count($count);
-
-            if ($isOperations) {
-                $factory = $factory->driver();
-            }
-
-            $factory->create([
-                'department_id' => $department->id,
-                'position_id' => $positions->skip(1)->random()?->id ?? $positions->first()?->id,
-                'supervisor_id' => $supervisor?->id,
-            ]);
-        }
-
-        // A couple of records in non-active states to exercise the filters.
-        Employee::query()->inRandomOrder()->limit(3)->update(['status' => 'on_leave']);
-
-        $this->command?->info('Seeded '.Employee::count().' employees.');
+        $this->command?->info('Seeded exactly 2 sample employees.');
     }
 }

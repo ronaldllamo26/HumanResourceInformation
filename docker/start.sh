@@ -17,6 +17,9 @@ if [ "$RUN_MIGRATIONS" = "true" ]; then
 
     echo "[start] Binding admin OTP..."
     php artisan hris:bind-admin-otp || true
+
+    echo "[start] Trimming demo data to 2 sample employees..."
+    php artisan hris:trim-to-two-employees || true
 fi
 
 echo "[start] Optimizing caches..."
