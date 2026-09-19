@@ -6,15 +6,12 @@ use App\Models\Client;
 use App\Models\Department;
 use App\Models\Employee;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Carbon;
 
 /**
- * The five client companies PrimePower deploys to.
+ * Sample client companies PrimePower deploys to.
  *
- * Placeholder names, chosen to be plausible for a fleet and transportation
- * manpower agency and spread across wage regions so the provincial-rate
- * handling has something real to work against — every client in NCR would
- * make the regional floor look like a single number.
- *
+ * Two placeholder records kept for demo purposes.
  * Replace the names here with the real accounts; nothing downstream reads
  * them, only the codes and the client ids.
  */
@@ -22,6 +19,9 @@ class ClientSeeder extends Seeder
 {
     public function run(): void
     {
+        $today = Carbon::today()->toDateString();
+        $twoYearsOut = Carbon::today()->addYears(2)->toDateString();
+
         $clients = [
             [
                 'code' => 'MTL',
@@ -32,8 +32,8 @@ class ClientSeeder extends Seeder
                 'contact_email' => 'operations@metrologistics.example',
                 'contact_number' => '(02) 8845 1120',
                 'address' => 'Cabrera Rd, Parañaque City, Metro Manila',
-                'contract_start' => '2024-01-15',
-                'contract_end' => '2027-01-14',
+                'contract_start' => $today,
+                'contract_end' => $twoYearsOut,
             ],
             [
                 'code' => 'SRM',
@@ -44,44 +44,8 @@ class ClientSeeder extends Seeder
                 'contact_email' => 'hr@southernretail.example',
                 'contact_number' => '(049) 502 8833',
                 'address' => 'Maharlika Highway, Calamba, Laguna',
-                'contract_start' => '2024-06-01',
-                'contract_end' => '2026-12-31',
-            ],
-            [
-                'code' => 'PCB',
-                'name' => 'Pacific Coast Beverages',
-                'industry' => 'Manufacturing & Haulage',
-                'wage_region' => 'R3',
-                'contact_person' => 'Arnel Dizon',
-                'contact_email' => 'plant.admin@pacificcoast.example',
-                'contact_number' => '(045) 961 4402',
-                'address' => 'San Fernando, Pampanga',
-                'contract_start' => '2025-02-01',
-                'contract_end' => '2027-01-31',
-            ],
-            [
-                'code' => 'VIS',
-                'name' => 'Visayas Island Transport',
-                'industry' => 'Passenger Transport',
-                'wage_region' => 'R7',
-                'contact_person' => 'Maricel Abrigo',
-                'contact_email' => 'dispatch@visayastransport.example',
-                'contact_number' => '(032) 268 7715',
-                'address' => 'North Reclamation Area, Cebu City',
-                'contract_start' => '2025-08-15',
-                'contract_end' => null,
-            ],
-            [
-                'code' => 'DVA',
-                'name' => 'Davao Agri Haulers',
-                'industry' => 'Agricultural Logistics',
-                'wage_region' => 'R11',
-                'contact_person' => 'Joel Mangubat',
-                'contact_email' => 'admin@davaoagri.example',
-                'contact_number' => '(082) 227 3391',
-                'address' => 'Bo. Obrero, Davao City',
-                'contract_start' => '2026-01-05',
-                'contract_end' => null,
+                'contract_start' => $today,
+                'contract_end' => $twoYearsOut,
             ],
         ];
 

@@ -233,7 +233,7 @@ class DatabaseSeeder extends Seeder
             $positions = $department->positions;
             $isOperations = str_contains(strtolower($department->name), 'operations');
 
-            $count = $isOperations ? 12 : random_int(3, 6);
+            $count = 2;
 
             $factory = Employee::factory()->count($count);
 
