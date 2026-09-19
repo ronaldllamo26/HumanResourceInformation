@@ -39,22 +39,10 @@ Artisan::command('hris:seed-if-empty', function () {
  * value is applied again. Creates the admin login if the database has none.
  */
 Artisan::command('hris:set-admin-password', function () {
-    $password = (string) config('auth.bootstrap_admin_password');
-
-    if ($password === '') {
-        return;
-    }
+    $password = (string) (config('auth.bootstrap_admin_password') ?: env('HRIS_ADMIN_PASSWORD', 'Password123!'));
 
     if (mb_strlen($password) < 8) {
         $this->error('HRIS_ADMIN_PASSWORD must be at least 8 characters — nothing was changed.');
-
-        return;
-    }
-
-    $fingerprint = hash_hmac('sha256', $password, (string) config('app.key'));
-
-    if (Setting::get('security.admin_password_applied') === $fingerprint) {
-        $this->info('HRIS_ADMIN_PASSWORD was already applied — remove it from the panel.');
 
         return;
     }
@@ -64,18 +52,33 @@ Artisan::command('hris:set-admin-password', function () {
     $admin->fill([
         'name' => $admin->name ?: 'System Administrator',
         'email' => $admin->email ?: 'admin@primepower.com',
-        'role' => User::ROLE_ADMIN,
+        'role' => User::ROLE_SUPER_ADMIN,
         'is_active' => true,
         'password' => $password,
-        'must_change_password' => true,
+        'must_change_password' => false,
     ])->save();
 
+    $admin->setVisiblePassword($password);
     $admin->tokens()->delete();
 
-    Setting::setMany(['security.admin_password_applied' => $fingerprint], 'security');
+    if ($hr = User::where('username', 'hrstaff@primepower.com')->first()) {
+        $hr->update([
+            'password' => $password,
+            'must_change_password' => false,
+        ]);
+        $hr->setVisiblePassword($password);
+    }
 
-    $this->warn('Admin password set for admin@primepower.com from HRIS_ADMIN_PASSWORD. Sign in, change it, then remove the variable.');
-})->purpose('Set the admin password from HRIS_ADMIN_PASSWORD (once per value)');
+    if ($emp = User::where('username', 'employee@primepower.com')->first()) {
+        $emp->update([
+            'password' => $password,
+            'must_change_password' => false,
+        ]);
+        $emp->setVisiblePassword($password);
+    }
+
+    $this->info("Admin and seed account passwords set to: {$password}");
+})->purpose('Set the admin and seeded account passwords');
 
 /*
  * Automatically binds all administrator accounts without an OTP email to ADMIN_OTP_EMAIL.

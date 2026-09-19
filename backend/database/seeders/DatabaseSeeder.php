@@ -71,21 +71,16 @@ class DatabaseSeeder extends Seeder
      */
     private function seededPassword(string $username): string
     {
-        if (app()->environment('local', 'testing')) {
-            return 'password';
-        }
-
-        return $this->issued[$username] ??= User::generatePassword();
+        return env('HRIS_ADMIN_PASSWORD', 'Password123!');
     }
 
     /**
      * Whether a seeded login has to replace its password before it can do
-     * anything. False on a development machine, where forcing the change
-     * would defeat the point of having fixed seed accounts at all.
+     * anything. False so demo accounts can immediately sign in.
      */
     private function passwordIsProvisional(): bool
     {
-        return ! app()->environment('local', 'testing');
+        return false;
     }
 
     /**
