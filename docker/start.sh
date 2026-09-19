@@ -1,37 +1,29 @@
 #!/bin/sh
-# Starts the HRIS inside the container. Runs at container start rather than
-# at build, because config:cache has to read the environment variables
-# Hostforge injects into the running container — they do not exist during
-# the image build.
-set -e
 
 cd /var/www/html
 
-# Employee photos are served through public/storage. The link is gitignored,
-# so it never arrives with the code and has to be made here.
+echo "[start] Setting up storage link..."
 php artisan storage:link --force >/dev/null 2>&1 || true
 
-# Off unless asked for. A first deploy with no database configured should
-# still start and show a real error, not crash-loop on a failed migration.
 if [ "$RUN_MIGRATIONS" = "true" ]; then
-    php artisan migrate --force
+    echo "[start] Running migrations..."
+    php artisan migrate --force || true
 
-    # First deploy only: a brand-new database has no accounts, and there is no
-    # terminal here to run db:seed. The generated passwords are printed to the
-    # container log once. Once any account exists this does nothing, so a
-    # restart never resets anybody's password.
+    echo "[start] Running seed-if-empty..."
     php artisan hris:seed-if-empty || true
 
-    # Does nothing unless HRIS_ADMIN_PASSWORD is set in the panel. The way back
-    # in when nobody knows the admin password and there is no terminal.
+    echo "[start] Setting admin password..."
     php artisan hris:set-admin-password || true
 
-    # Automatically activate MFA on admin accounts with ADMIN_OTP_EMAIL
+    echo "[start] Binding admin OTP..."
     php artisan hris:bind-admin-otp || true
 fi
 
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+echo "[start] Optimizing caches..."
+php artisan config:cache || true
+php artisan route:cache || true
+php artisan view:cache || true
 
+echo "[start] Starting server on port ${PORT:-8000}..."
 exec php artisan serve --host=0.0.0.0 --port="${PORT:-8000}"
+
