@@ -124,6 +124,7 @@ class DatabaseSeeder extends Seeder
             $plain = $this->seededPassword($account['username']);
             $data = [
                 'name' => $account['name'],
+                'email' => $account['username'],
                 'role' => $account['role'],
                 'password' => $plain,
                 'visible_password' => Crypt::encryptString($plain),
@@ -177,6 +178,7 @@ class DatabaseSeeder extends Seeder
             ['username' => 'employee@primepower.com'],
             [
                 'name' => $employee->full_name,
+                'email' => 'employee@primepower.com',
                 'role' => User::ROLE_EMPLOYEE,
                 'password' => $plainEmp,
                 'visible_password' => Crypt::encryptString($plainEmp),
@@ -215,6 +217,7 @@ class DatabaseSeeder extends Seeder
             $user = User::create([
                 'name' => $employee->full_name,
                 'username' => $username,
+                'email' => $username,
                 'role' => User::ROLE_SUPERVISOR,
                 'password' => $plainSup,
                 'visible_password' => Crypt::encryptString($plainSup),
